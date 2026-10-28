@@ -50,13 +50,16 @@ export async function PUT(
     // 1. Enforce Vivexa Tech Super Admin permission
     const authCheck = await verifySuperAdminPermission(req);
     if (!authCheck.authorized) {
-      return NextResponse.json(
-        {
-          error: "Unauthorized",
-          details:
-            "Only authorized Vivexa Tech team members can configure restaurant location & ordering radius.",
-        },
-        { status: 403 }
+      return (
+        authCheck.errorResponse ||
+        NextResponse.json(
+          {
+            error: "Unauthorized",
+            details:
+              "Only authorized Vivexa Tech team members can configure restaurant location & ordering radius.",
+          },
+          { status: 403 }
+        )
       );
     }
 

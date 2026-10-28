@@ -21,6 +21,7 @@ import { RestaurantProfile, BillingConfig, SubscriptionPlan } from "@/lib/types"
 import { formatCurrency } from "@/lib/utils";
 import { calculateOrderBill } from "@/lib/services/billing";
 import { toast } from "sonner";
+import { authFetch } from "@/lib/auth/client-auth";
 
 export default function SuperAdminBillingConfigPage() {
   const [activeTab, setActiveTab] = useState<"taxes" | "plans">("taxes");
@@ -90,7 +91,7 @@ export default function SuperAdminBillingConfigPage() {
 
     setIsSaving(true);
     try {
-      const res = await fetch(`/api/restaurants/${selectedRestId}`, {
+      const res = await authFetch(`/api/restaurants/${selectedRestId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ billingConfig: billing }),
@@ -122,7 +123,7 @@ export default function SuperAdminBillingConfigPage() {
 
     setIsSavingPlan(true);
     try {
-      const res = await fetch("/api/subscriptions/plans", {
+      const res = await authFetch("/api/subscriptions/plans", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

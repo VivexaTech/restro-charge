@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { RestaurantProfile } from "@/lib/types";
 import { toast } from "sonner";
+import { authFetch } from "@/lib/auth/client-auth";
 
 export default function SuperAdminRestaurantsPage() {
   const [restaurants, setRestaurants] = useState<RestaurantProfile[]>([]);
@@ -101,7 +102,7 @@ export default function SuperAdminRestaurantsPage() {
 
     setIsSavingLoc(true);
     try {
-      const res = await fetch(`/api/restaurants/${selectedRest.id}/location`, {
+      const res = await authFetch(`/api/restaurants/${selectedRest.id}/location`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -114,7 +115,7 @@ export default function SuperAdminRestaurantsPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to save location");
+      if (!res.ok) throw new Error(data.error || data.details || "Failed to save location");
 
       setRestaurants((prev) =>
         prev.map((r) =>
@@ -150,7 +151,7 @@ export default function SuperAdminRestaurantsPage() {
 
   const handleTogglePublish = async (id: string, currentPublished: boolean) => {
     try {
-      const res = await fetch(`/api/restaurants/${id}`, {
+      const res = await authFetch(`/api/restaurants/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ published: !currentPublished }),
@@ -172,7 +173,7 @@ export default function SuperAdminRestaurantsPage() {
       const target = restaurants.find((r) => r.id === id);
       if (!target) return;
 
-      const res = await fetch(`/api/restaurants/${id}`, {
+      const res = await authFetch(`/api/restaurants/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

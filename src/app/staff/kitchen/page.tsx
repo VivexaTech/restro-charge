@@ -15,6 +15,7 @@ import { OrderItem, OrderStatus } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
 import { timeAgo } from "@/lib/utils";
 import { toast } from "sonner";
+import { authFetch } from "@/lib/auth/client-auth";
 
 export default function KitchenDisplaySystemPage() {
   const { user } = useAuth();
@@ -48,7 +49,7 @@ export default function KitchenDisplaySystemPage() {
 
   const handleKitchenStatus = async (orderId: string, nextStatus: OrderStatus) => {
     try {
-      const res = await fetch(`/api/orders/${orderId}/status`, {
+      const res = await authFetch(`/api/orders/${orderId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

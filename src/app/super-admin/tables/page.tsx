@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { RestaurantProfile, TableItem } from "@/lib/types";
 import { toast } from "sonner";
+import { authFetch } from "@/lib/auth/client-auth";
 
 export default function SuperAdminTablesAndQRPage() {
   const [restaurants, setRestaurants] = useState<RestaurantProfile[]>([]);
@@ -82,7 +83,7 @@ export default function SuperAdminTablesAndQRPage() {
 
     setIsCreatingTable(true);
     try {
-      const res = await fetch("/api/tables", {
+      const res = await authFetch("/api/tables", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -114,7 +115,7 @@ export default function SuperAdminTablesAndQRPage() {
   const handleRegenerateQR = async (tableId: string) => {
     try {
       toast.loading("Regenerating QR code...", { id: "regen" });
-      const res = await fetch("/api/qr/generate", {
+      const res = await authFetch("/api/qr/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

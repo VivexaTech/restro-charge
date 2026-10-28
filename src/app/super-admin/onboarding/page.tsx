@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { RestaurantRegistrationRequest } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 import { toast } from "sonner";
+import { authFetch } from "@/lib/auth/client-auth";
 
 export default function SuperAdminOnboardingRequestsPage() {
   const [requests, setRequests] = useState<RestaurantRegistrationRequest[]>([]);
@@ -44,7 +45,7 @@ export default function SuperAdminOnboardingRequestsPage() {
   const handleAction = async (requestId: string, action: "APPROVE" | "REJECT") => {
     setProcessingId(requestId);
     try {
-      const res = await fetch("/api/requests", {
+      const res = await authFetch("/api/requests", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ requestId, action, reviewedBy: "Vivexa Super Admin" }),

@@ -20,6 +20,7 @@ import { Modal } from "@/components/ui/modal";
 import { ProductItem, ProductCategory, ProductPortion, DietaryClassification } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
+import { authFetch } from "@/lib/auth/client-auth";
 
 export default function RestaurantMenuManagementPage() {
   const { user } = useAuth();
@@ -129,7 +130,7 @@ export default function RestaurantMenuManagementPage() {
   // Toggle availability (In Stock / Out of Stock)
   const handleToggleStock = async (p: ProductItem) => {
     try {
-      const res = await fetch("/api/products", {
+      const res = await authFetch("/api/products", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -176,7 +177,7 @@ export default function RestaurantMenuManagementPage() {
 
     try {
       if (editingProduct) {
-        const res = await fetch("/api/products", {
+        const res = await authFetch("/api/products", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -199,7 +200,7 @@ export default function RestaurantMenuManagementPage() {
         );
         toast.success("Dish updated successfully!");
       } else {
-        const res = await fetch("/api/products", {
+        const res = await authFetch("/api/products", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -236,7 +237,7 @@ export default function RestaurantMenuManagementPage() {
     }
 
     try {
-      const res = await fetch("/api/categories", {
+      const res = await authFetch("/api/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

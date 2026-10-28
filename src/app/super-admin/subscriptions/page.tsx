@@ -20,6 +20,7 @@ import { Modal } from "@/components/ui/modal";
 import { RestaurantProfile, SubscriptionPlan } from "@/lib/types";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
+import { authFetch } from "@/lib/auth/client-auth";
 
 export default function SuperAdminSubscriptionsPage() {
   const [restaurants, setRestaurants] = useState<RestaurantProfile[]>([]);
@@ -93,7 +94,7 @@ export default function SuperAdminSubscriptionsPage() {
 
     setIsSubmittingRenew(true);
     try {
-      const res = await fetch("/api/subscriptions/manual-renew", {
+      const res = await authFetch("/api/subscriptions/manual-renew", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -128,7 +129,7 @@ export default function SuperAdminSubscriptionsPage() {
 
     setIsSubmittingTrial(true);
     try {
-      const res = await fetch("/api/subscriptions/trial", {
+      const res = await authFetch("/api/subscriptions/trial", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
