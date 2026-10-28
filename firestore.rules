@@ -1,0 +1,108 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        request.auth.uid == 'GDF2eldrzSNR9oltgezCr9MXt0I3' ||
+        request.auth.token.role == 'SUPER_ADMIN' ||
+        request.auth.token.superAdmin == true ||
+        request.auth.token.email.matches('.*@vivexatech[.]in$')
+      );
+    }
+
+    function isRestaurantStaff(restaurantId) {
+      return isAuthenticated() && (
+        request.auth.token.restaurantId == restaurantId ||
+        request.auth.token.role == 'SUPER_ADMIN'
+      );
+    }
+
+    function isRestaurantOwner(restaurantId) {
+      return isAuthenticated() && (
+        (request.auth.token.restaurantId == restaurantId && request.auth.token.role == 'RESTAURANT_OWNER') ||
+        request.auth.token.role == 'SUPER_ADMIN'
+      );
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
+      allow write: if isSuperAdmin();
+    }
+
+    // Restaurants Collection
+    match /restaurants/{restaurantId} {
+      // Anyone can read published restaurants
+      allow read: if resource.data.published == true || isRestaurantStaff(restaurantId);
+      // Only Super Admin can create or delete restaurants
+      allow create, delete: if isSuperAdmin();
+      // Restaurant Owner can update permitted profile & branding (excluding locationSettings & subscription); Super Admin can update all
+      allow update: if (isRestaurantOwner(restaurantId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['locationSettings', 'subscription'])) || isSuperAdmin();
+
+      // Subcollections
+      match /categories/{categoryId} {
+        allow read: if true;
+        allow write: if isRestaurantStaff(restaurantId);
+      }
+
+      match /products/{productId} {
+        allow read: if true;
+        allow write: if isRestaurantStaff(restaurantId);
+      }
+
+      match /tables/{tableId} {
+        allow read: if true;
+        // Strictly only Vivexa Super Admin can create or issue table QR codes
+        allow write: if isSuperAdmin();
+      }
+
+      match /orders/{orderId} {
+        // Customer guests can create orders (further validated on trusted backend)
+        allow create: if true;
+        // Only restaurant staff can read and update order lifecycle
+        allow read, update: if isRestaurantStaff(restaurantId);
+        allow delete: if isSuperAdmin();
+      }
+
+      match /staff/{staffId} {
+        allow read, write: if isRestaurantOwner(restaurantId);
+      }
+
+      match /subscriptionHistory/{historyId} {
+        allow read: if isRestaurantOwner(restaurantId);
+        allow write: if isSuperAdmin();
+      }
+    }
+
+    // Public Registration Requests
+    match /restaurantRequests/{requestId} {
+      allow create: if true;
+      allow read, update, delete: if isSuperAdmin();
+    }
+
+    // Central Subscription Plans
+    match /subscriptionPlans/{planId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // Subscription Payments
+    match /subscriptionPayments/{paymentId} {
+      allow read: if isAuthenticated() && (
+        request.auth.token.restaurantId == resource.data.restaurantId || isSuperAdmin()
+      );
+      allow write: if isSuperAdmin();
+    }
+
+    // Admin Audit Logs
+    match /adminAuditLogs/{logId} {
+      allow read, write: if isSuperAdmin();
+    }
+  }
+}

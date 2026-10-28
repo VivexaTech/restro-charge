@@ -1,0 +1,40 @@
+{
+  "name": "restrocharge",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "npx tsx tests/billing.test.ts && npx tsx tests/subscription.test.ts && npx tsx tests/security-qr.test.ts && npx tsx tests/e2e-workflow.test.ts && npx tsx tests/cloud-integrations.test.ts && npx tsx tests/enhancements.test.ts && npx tsx tests/production-features.test.ts && npx tsx tests/geo-simulator.test.ts"
+  },
+  "dependencies": {
+    "class-variance-authority": "^0.7.0",
+    "cloudinary": "^2.5.1",
+    "clsx": "^2.1.1",
+    "firebase": "^10.14.0",
+    "firebase-admin": "^12.6.0",
+    "lucide-react": "^0.453.0",
+    "next": "^14.2.15",
+    "qrcode": "^1.5.4",
+    "razorpay": "^2.9.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "resend": "^4.0.0",
+    "sonner": "^1.5.0",
+    "tailwind-merge": "^2.5.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.11",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "tsx": "^4.23.15",
+    "typescript": "^5.6.3"
+  }
+}
