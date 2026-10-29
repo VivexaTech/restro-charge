@@ -134,11 +134,11 @@ export default function RestaurantWebsiteCustomizerPage() {
             Restaurant Website Customizer
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Personalize your public subpath page ({process.env.NEXT_PUBLIC_APP_URL || "https://restrocharge.vivexatech.in"}/vivexa-restro)
+            Personalize your public subpath page ({process.env.NEXT_PUBLIC_APP_URL || "https://restrocharge.vivexatech.in"}/{restaurant?.slug || "your-restaurant"})
           </p>
         </div>
 
-        <Link href="/vivexa-restro" target="_blank">
+        <Link href={`/${restaurant?.slug || "vivexa-restro"}`} target="_blank">
           <Button variant="outline" size="sm" className="font-semibold">
             <ExternalLink className="h-4 w-4 mr-1.5" />
             Live Preview

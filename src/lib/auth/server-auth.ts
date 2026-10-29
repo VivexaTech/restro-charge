@@ -144,20 +144,6 @@ export async function verifyRestaurantAccess(
 }> {
   const user = await getAuthenticatedUser(req);
 
-  if (!user && (process.env.NODE_ENV !== "production" || !isFirebaseAdminReady())) {
-    // Development pass-through when no token supplied or Firebase Admin not configured
-    return {
-      authorized: true,
-      user: {
-        uid: "dev_user",
-        email: "dev@restrocharge.in",
-        role: "RESTAURANT_OWNER",
-        restaurantId: targetRestaurantId,
-        isSuperAdmin: false,
-      },
-    };
-  }
-
   if (!user) {
     return {
       authorized: false,

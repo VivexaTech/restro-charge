@@ -19,6 +19,7 @@ import { OrderItem, OrderStatus } from "@/lib/types";
 import { formatCurrency, formatTime, timeAgo } from "@/lib/utils";
 import { useAuth } from "@/context/auth-context";
 import { toast } from "sonner";
+import { authFetch } from "@/lib/auth/client-auth";
 
 export default function StaffFloorOrdersPage() {
   const { user } = useAuth();
@@ -36,7 +37,7 @@ export default function StaffFloorOrdersPage() {
       return;
     }
     try {
-      const res = await fetch(`/api/orders?restaurantId=${currentRestaurantId}`);
+      const res = await authFetch(`/api/orders?restaurantId=${currentRestaurantId}`);
       const data = await res.json();
       const list: OrderItem[] = data.orders || [];
 
@@ -62,7 +63,7 @@ export default function StaffFloorOrdersPage() {
 
   const handleUpdateStatus = async (orderId: string, nextStatus: OrderStatus) => {
     try {
-      const res = await fetch(`/api/orders/${orderId}/status`, {
+      const res = await authFetch(`/api/orders/${orderId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

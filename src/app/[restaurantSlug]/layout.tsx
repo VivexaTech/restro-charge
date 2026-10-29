@@ -33,6 +33,8 @@ const RESERVED_SLUGS = [
   "sitemaps",
 ];
 
+import { firestoreService } from "@/lib/services/firestore-service";
+
 interface Props {
   children: React.ReactNode;
   params: {
@@ -40,14 +42,20 @@ interface Props {
   };
 }
 
-export default function RestaurantWebsiteLayout({ children, params }: Props) {
+export default async function RestaurantWebsiteLayout({ children, params }: Props) {
   const { restaurantSlug } = params;
 
   if (RESERVED_SLUGS.includes(restaurantSlug.toLowerCase())) {
     notFound();
   }
 
-  const restaurant = dataStore.getRestaurantBySlug(restaurantSlug);
+  let restaurant = dataStore.getRestaurantBySlug(restaurantSlug);
+  if (!restaurant) {
+    restaurant = await firestoreService.getRestaurantBySlug(restaurantSlug);
+    if (restaurant) {
+      dataStore.saveRestaurantLocally(restaurant);
+    }
+  }
   if (!restaurant) {
     notFound();
   }

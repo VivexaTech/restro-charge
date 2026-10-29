@@ -19,8 +19,11 @@ import { useActiveRestaurant } from "@/lib/hooks/use-active-restaurant";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { OrderItem } from "@/lib/types";
+import { OrderItem, DiningSession } from "@/lib/types";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
+import { authFetch } from "@/lib/auth/client-auth";
+import { CombinedBillModal } from "@/components/public/combined-bill-modal";
+import { toast } from "sonner";
 
 export default function RestaurantOrdersPage() {
   const { user } = useAuth();
@@ -37,6 +40,25 @@ export default function RestaurantOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [selectedSession, setSelectedSession] = useState<DiningSession | null>(null);
+  const [sessionModalOpen, setSessionModalOpen] = useState(false);
+
+  const handleViewCombinedBill = async (sessionId: string) => {
+    try {
+      const res = await authFetch(`/api/dining-sessions?restaurantId=${currentRestaurantId}&sessionId=${sessionId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.session) {
+          setSelectedSession(data.session);
+          setSessionModalOpen(true);
+        }
+      } else {
+        toast.error("Could not locate dining session.");
+      }
+    } catch {
+      toast.error("Failed to load dining session bill.");
+    }
+  };
 
   useEffect(() => {
     async function load() {
@@ -49,7 +71,7 @@ export default function RestaurantOrdersPage() {
       }
       try {
         setLoading(true);
-        const res = await fetch(`/api/orders?restaurantId=${currentRestaurantId}`);
+        const res = await authFetch(`/api/orders?restaurantId=${currentRestaurantId}`);
         const data = await res.json();
         setOrders(data.orders || []);
       } catch {
@@ -177,13 +199,13 @@ export default function RestaurantOrdersPage() {
           </p>
           {orders.length === 0 && (
             <Link
-              href="/order/vivexa-restro/table-01"
+              href={`/order/${activeRestaurant?.slug || "vivexa-restro"}/table-01`}
               target="_blank"
               className="inline-block mt-4"
             >
               <Button size="sm" variant="outline" className="font-semibold text-xs">
                 <QrCode className="h-3.5 w-3.5 mr-1.5" />
-                Place Test QR Order (Vivexa Restro - Table 01)
+                Place Test QR Order ({activeRestaurant?.name || "Your Restaurant"} - Table 01)
               </Button>
             </Link>
           )}
@@ -276,12 +298,34 @@ export default function RestaurantOrdersPage() {
                     <span>Total Calculated</span>
                     <span className="text-brand-600">{formatCurrency(ord.billing.finalTotal)}</span>
                   </div>
+
+                  {ord.diningSessionId && (
+                    <div className="pt-2 border-t border-slate-100 mt-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleViewCombinedBill(ord.diningSessionId!)}
+                        className="w-full text-[10px] h-7 bg-white hover:bg-slate-50 font-semibold"
+                      >
+                        <Receipt className="h-3 w-3 mr-1 text-brand-600" />
+                        View Table Dining Session Bill
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           ))}
         </div>
       )}
+
+      {/* Staff Dining Session Combined Bill Modal */}
+      <CombinedBillModal
+        isOpen={sessionModalOpen}
+        onClose={() => setSessionModalOpen(false)}
+        session={selectedSession}
+        restaurantName={activeRestaurant?.name}
+      />
     </div>
   );
 }

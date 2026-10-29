@@ -166,7 +166,7 @@ export class FirestoreService {
       const adminDb = await getAdminDb();
       if (adminDb) {
         await adminDb.collection("restaurants").doc(restaurant.id).set(payload, { merge: true });
-      } else if (typeof window !== "undefined") {
+      } else {
         await setDoc(doc(db, "restaurants", restaurant.id), payload, { merge: true });
       }
     } catch (err: any) {
@@ -213,7 +213,7 @@ export class FirestoreService {
           .collection("categories")
           .doc(category.id)
           .set(payload, { merge: true });
-      } else if (typeof window !== "undefined") {
+      } else {
         await setDoc(
           doc(db, "restaurants", restaurantId, "categories", category.id),
           payload,
@@ -235,7 +235,7 @@ export class FirestoreService {
           .collection("categories")
           .doc(categoryId)
           .delete();
-      } else if (typeof window !== "undefined") {
+      } else {
         await deleteDoc(doc(db, "restaurants", restaurantId, "categories", categoryId));
       }
     } catch (err: any) {
@@ -282,7 +282,7 @@ export class FirestoreService {
           .collection("products")
           .doc(product.id)
           .set(payload, { merge: true });
-      } else if (typeof window !== "undefined") {
+      } else {
         await setDoc(
           doc(db, "restaurants", restaurantId, "products", product.id),
           payload,
@@ -304,7 +304,7 @@ export class FirestoreService {
           .collection("products")
           .doc(productId)
           .delete();
-      } else if (typeof window !== "undefined") {
+      } else {
         await deleteDoc(doc(db, "restaurants", restaurantId, "products", productId));
       }
     } catch (err: any) {
@@ -351,7 +351,7 @@ export class FirestoreService {
           .collection("offers")
           .doc(offer.id)
           .set(payload, { merge: true });
-      } else if (typeof window !== "undefined") {
+      } else {
         await setDoc(
           doc(db, "restaurants", restaurantId, "offers", offer.id),
           payload,
@@ -373,7 +373,7 @@ export class FirestoreService {
           .collection("offers")
           .doc(offerId)
           .delete();
-      } else if (typeof window !== "undefined") {
+      } else {
         await deleteDoc(doc(db, "restaurants", restaurantId, "offers", offerId));
       }
     } catch (err: any) {
@@ -418,7 +418,7 @@ export class FirestoreService {
           .collection("tables")
           .doc(table.id)
           .set(payload, { merge: true });
-      } else if (typeof window !== "undefined") {
+      } else {
         await setDoc(
           doc(db, "restaurants", restaurantId, "tables", table.id),
           payload,
@@ -474,7 +474,7 @@ export class FirestoreService {
           .collection("orders")
           .doc(order.id)
           .set(payload);
-      } else if (typeof window !== "undefined") {
+      } else {
         await setDoc(
           doc(db, "restaurants", order.restaurantId, "orders", order.id),
           payload
@@ -611,7 +611,7 @@ export class FirestoreService {
           .collection("diningSessions")
           .doc(session.id)
           .set(payload, { merge: true });
-      } else if (typeof window !== "undefined") {
+      } else {
         await setDoc(
           doc(db, "restaurants", restaurantId, "diningSessions", session.id),
           payload,
@@ -778,7 +778,7 @@ export class FirestoreService {
       const adminDb = await getAdminDb();
       if (adminDb) {
         await adminDb.collection("restaurantRequests").doc(req.id).set(payload, { merge: true });
-      } else if (typeof window !== "undefined") {
+      } else {
         await setDoc(doc(db, "restaurantRequests", req.id), payload, { merge: true });
       }
     } catch (err: any) {
@@ -792,7 +792,7 @@ export class FirestoreService {
       const adminDb = await getAdminDb();
       if (adminDb) {
         await adminDb.collection("adminAuditLogs").doc(log.id).set(payload);
-      } else if (typeof window !== "undefined") {
+      } else {
         await setDoc(doc(db, "adminAuditLogs", log.id), payload);
       }
     } catch (err: any) {

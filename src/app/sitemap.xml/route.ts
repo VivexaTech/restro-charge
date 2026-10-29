@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { dataStore } from "@/lib/services/data-store";
+import { firestoreService } from "@/lib/services/firestore-service";
 import { getSubscriptionAccess } from "@/lib/services/subscription";
 
 export async function GET(req: NextRequest) {
@@ -12,9 +13,12 @@ export async function GET(req: NextRequest) {
   const protocol = req.headers.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
   const origin = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`;
 
-  const restaurants = dataStore.getPublishedRestaurants().filter((r) => {
-    const sub = getSubscriptionAccess(r.subscription);
-    return sub.canViewSite;
+  let allR = await firestoreService.getRestaurants();
+  if (!allR || allR.length === 0) {
+    allR = dataStore.getRestaurants();
+  }
+  const restaurants = allR.filter((r) => {
+    return r.published && getSubscriptionAccess(r.subscription).canViewSite;
   });
 
   const nowIso = new Date().toISOString();

@@ -92,23 +92,19 @@ export class DiningSessionService {
           console.warn("[DiningSession] Firestore read warning:", err.message);
         }
       }
-    }
 
-    // 2. If no valid session found by token, check active table session
-    if (!existingSession) {
-      existingSession = dataStore.getActiveDiningSessionForTable(restaurantId, tableId);
-      if (!existingSession) {
-        try {
-          const fromDb = await firestoreService.getActiveSessionForTable(restaurantId, tableId);
-          if (fromDb) {
-            existingSession = fromDb;
-            dataStore.saveDiningSessionLocally(fromDb);
-          }
-        } catch (err: any) {
-          console.warn("[DiningSession] Table active session lookup warning:", err.message);
-        }
+      // Verify session belongs strictly to the requesting restaurant and table
+      if (
+        existingSession &&
+        (existingSession.restaurantId !== restaurantId || existingSession.tableId !== tableId)
+      ) {
+        existingSession = null;
       }
     }
+
+    // 2. Multi-customer table isolation:
+    // If no session token was supplied or token is invalid/closed, do NOT merge
+    // into another customer's active session. Always spawn an independent session.
 
     // 3. If an existing ACTIVE session is found, evaluate the departure radius
     if (existingSession && existingSession.status === "ACTIVE") {

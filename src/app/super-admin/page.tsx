@@ -13,12 +13,18 @@ import {
   QrCode,
 } from "lucide-react";
 import { dataStore } from "@/lib/services/data-store";
+import { firestoreService } from "@/lib/services/firestore-service";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-export default function SuperAdminDashboardPage() {
-  const restaurants = dataStore.getRestaurants();
+export default async function SuperAdminDashboardPage() {
+  let restaurants = await firestoreService.getRestaurants();
+  if (restaurants && restaurants.length > 0) {
+    restaurants.forEach((r) => dataStore.saveRestaurantLocally(r));
+  } else {
+    restaurants = dataStore.getRestaurants();
+  }
   const requests = dataStore.getRequests();
   const allOrders = dataStore.getOrders();
   const auditLogs = dataStore.getAuditLogs().slice(0, 5);

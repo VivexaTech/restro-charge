@@ -34,8 +34,10 @@ export default function LoginPage() {
         router.push("/super-admin");
       } else if (res.role === "KITCHEN_STAFF" || res.role === "ORDER_STAFF") {
         router.push("/staff");
-      } else {
+      } else if (res.role === "RESTAURANT_OWNER" || res.role === "RESTAURANT_MANAGER") {
         router.push("/dashboard");
+      } else {
+        router.push("/access-pending");
       }
     } else {
       toast.error(res.error || "Login failed.");
@@ -54,8 +56,10 @@ export default function LoginPage() {
         router.push("/super-admin");
       } else if (res.role === "KITCHEN_STAFF" || res.role === "ORDER_STAFF") {
         router.push("/staff");
-      } else {
+      } else if (res.role === "RESTAURANT_OWNER" || res.role === "RESTAURANT_MANAGER") {
         router.push("/dashboard");
+      } else {
+        router.push("/access-pending");
       }
     } else {
       toast.error(res.error || "Google sign-in failed.");

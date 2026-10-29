@@ -72,7 +72,7 @@ export function RoleGuard({
         ? "/dashboard"
         : role === "ORDER_STAFF" || role === "KITCHEN_STAFF"
         ? "/staff"
-        : "/";
+        : "/access-pending";
 
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-slate-100 p-4">

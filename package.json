@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "npx tsx tests/billing.test.ts && npx tsx tests/subscription.test.ts && npx tsx tests/security-qr.test.ts && npx tsx tests/e2e-workflow.test.ts && npx tsx tests/cloud-integrations.test.ts && npx tsx tests/enhancements.test.ts && npx tsx tests/production-features.test.ts && npx tsx tests/geo-simulator.test.ts && npx tsx tests/super-admin-add-restaurant.test.ts && npx tsx --env-file=.env.local tests/admin-provisioning.test.ts && npx tsx --env-file=.env.local tests/staff-provisioning.test.ts && npx tsx tests/offers.test.ts && npx tsx --env-file=.env.local tests/patiyala-import.test.ts && npx tsx --env-file=.env.local tests/special-offers-day-and-selection.test.ts"
+    "test": "npx tsx tests/billing.test.ts && npx tsx tests/subscription.test.ts && npx tsx tests/security-qr.test.ts && npx tsx tests/e2e-workflow.test.ts && npx tsx tests/cloud-integrations.test.ts && npx tsx tests/enhancements.test.ts && npx tsx tests/production-features.test.ts && npx tsx tests/geo-simulator.test.ts && npx tsx tests/super-admin-add-restaurant.test.ts && npx tsx --env-file=.env.local tests/admin-provisioning.test.ts && npx tsx --env-file=.env.local tests/staff-provisioning.test.ts && npx tsx tests/offers.test.ts && npx tsx --env-file=.env.local tests/patiyala-import.test.ts && npx tsx --env-file=.env.local tests/special-offers-day-and-selection.test.ts && npx tsx --env-file=.env.local tests/comprehensive-audit-and-billing-sessions.test.ts"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.0",

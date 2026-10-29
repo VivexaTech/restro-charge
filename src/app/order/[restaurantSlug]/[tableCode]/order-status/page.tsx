@@ -17,7 +17,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatTime } from "@/lib/utils";
-import { OrderItem, OrderStatus } from "@/lib/types";
+import { OrderItem, OrderStatus, DiningSession } from "@/lib/types";
+import { CombinedBillModal } from "@/components/public/combined-bill-modal";
 
 interface Props {
   params: {
@@ -32,13 +33,36 @@ export default function OrderStatusPage({ params }: Props) {
   const orderId = searchParams.get("orderId");
 
   const [order, setOrder] = useState<OrderItem | null>(null);
+  const [session, setSession] = useState<DiningSession | null>(null);
+  const [billModalOpen, setBillModalOpen] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  const sessionToken =
+    searchParams.get("sessionToken") ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem(`restrocharge_dsess_${restaurantSlug}_${tableCode}`)
+      : null);
+
+  const fetchSession = async () => {
+    if (!sessionToken) return;
+    try {
+      const res = await fetch(
+        `/api/dining-sessions?restaurantSlug=${restaurantSlug}&tableCode=${tableCode}&sessionToken=${encodeURIComponent(sessionToken)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.session) {
+          setSession(data.session);
+        }
+      }
+    } catch {}
+  };
 
   const fetchOrder = async () => {
     if (!orderId) return;
     try {
-      const res = await fetch(`/api/orders`);
+      const res = await fetch(`/api/orders?orderId=${orderId}`);
       const data = await res.json();
       const found = (data.orders as OrderItem[]).find((o) => o.id === orderId);
       if (found) {
@@ -54,10 +78,14 @@ export default function OrderStatusPage({ params }: Props) {
 
   useEffect(() => {
     fetchOrder();
+    fetchSession();
     // Poll every 5 seconds for status updates
-    const interval = setInterval(fetchOrder, 5000);
+    const interval = setInterval(() => {
+      fetchOrder();
+      fetchSession();
+    }, 5000);
     return () => clearInterval(interval);
-  }, [orderId]);
+  }, [orderId, sessionToken]);
 
   if (loading) {
     return (
@@ -245,6 +273,42 @@ export default function OrderStatusPage({ params }: Props) {
             </div>
           </div>
 
+          {/* Ongoing Combined Dining Bill Banner */}
+          {session && (
+            <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-4 shadow-md space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Receipt className="h-4 w-4 text-brand-400" />
+                  <span className="font-bold text-xs uppercase tracking-wider text-slate-300">
+                    Ongoing Dining Visit
+                  </span>
+                </div>
+                <Badge variant="outline" className="text-[10px] text-brand-400 border-brand-500/40">
+                  {session.orderIds.length} {session.orderIds.length === 1 ? "Order" : "Orders"} Combined
+                </Badge>
+              </div>
+
+              <div className="flex justify-between items-baseline pt-1">
+                <div>
+                  <span className="text-xs text-slate-400 block">Total Combined Bill</span>
+                  <span className="text-[10px] text-slate-400">All rounds included</span>
+                </div>
+                <span className="text-xl font-extrabold text-brand-400 font-display">
+                  {formatCurrency(session.billing.finalTotal)}
+                </span>
+              </div>
+
+              <Button
+                size="sm"
+                onClick={() => setBillModalOpen(true)}
+                className="w-full text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-white shadow-xs"
+              >
+                <Receipt className="h-3.5 w-3.5 mr-1.5" />
+                View Full Combined Bill
+              </Button>
+            </div>
+          )}
+
           {/* Payment Notice */}
           <div className="text-[11px] text-slate-500 bg-amber-50/70 p-3 rounded-xl border border-amber-200/80 leading-relaxed">
             💡 <strong>Direct Settlement:</strong> Please settle this bill directly with your waiter or at the restaurant counter. RestroCharge does not process online customer payments.
@@ -260,6 +324,14 @@ export default function OrderStatusPage({ params }: Props) {
             </Button>
           </Link>
         </div>
+
+        {/* Combined Bill Modal */}
+        <CombinedBillModal
+          isOpen={billModalOpen}
+          onClose={() => setBillModalOpen(false)}
+          session={session}
+          onOrderMore={() => setBillModalOpen(false)}
+        />
       </div>
     </div>
   );

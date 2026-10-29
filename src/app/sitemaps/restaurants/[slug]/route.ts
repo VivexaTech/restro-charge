@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { dataStore } from "@/lib/services/data-store";
+import { firestoreService } from "@/lib/services/firestore-service";
 import { getSubscriptionAccess } from "@/lib/services/subscription";
 
 export async function GET(
@@ -20,7 +21,11 @@ export async function GET(
   const rawSlug = params.slug || "";
   const cleanSlug = rawSlug.replace(/\.xml$/i, "").toLowerCase().trim();
 
-  const restaurant = dataStore.getRestaurantBySlug(cleanSlug);
+  let restaurant = dataStore.getRestaurantBySlug(cleanSlug);
+  if (!restaurant) {
+    restaurant = await firestoreService.getRestaurantBySlug(cleanSlug);
+    if (restaurant) dataStore.saveRestaurantLocally(restaurant);
+  }
   if (!restaurant || !restaurant.published) {
     return new NextResponse("Restaurant not found or website not published.", { status: 404 });
   }

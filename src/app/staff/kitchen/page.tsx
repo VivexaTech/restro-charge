@@ -31,7 +31,7 @@ export default function KitchenDisplaySystemPage() {
       return;
     }
     try {
-      const res = await fetch(`/api/orders?restaurantId=${currentRestaurantId}`);
+      const res = await authFetch(`/api/orders?restaurantId=${currentRestaurantId}`);
       const data = await res.json();
       const list: OrderItem[] = data.orders || [];
       // KDS focuses on active kitchen tickets: NEW, ACCEPTED, PREPARING

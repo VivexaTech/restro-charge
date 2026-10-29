@@ -73,17 +73,11 @@ export function useActiveRestaurant() {
         return;
       }
 
-      // 3. Fallback when user has no restaurant assigned yet
-      const res = await fetch("/api/restaurants");
-      if (res.ok) {
-        const data = await res.json();
-        const list: RestaurantProfile[] = data.restaurants || [];
-        setAllRestaurants(list);
-        if (list.length > 0) {
-          setRestaurantId(list[0].id);
-          setRestaurant(list[0]);
-        }
-      }
+      // 3. User has no restaurant assigned yet:
+      // STRICT TENANT ISOLATION: NEVER fall back to demo restaurant (list[0])!
+      setRestaurantId("");
+      setRestaurant(null);
+      setAllRestaurants([]);
     } catch (err) {
       console.warn("[useActiveRestaurant] Error resolving restaurant:", err);
     } finally {

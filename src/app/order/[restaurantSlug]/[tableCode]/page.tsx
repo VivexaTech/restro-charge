@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Tag,
   Sparkles,
+  Receipt,
 } from "lucide-react";
 import { useCart } from "@/context/cart-context";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,9 @@ import {
   TableItem,
   DietaryClassification,
   RestaurantOffer,
+  DiningSession,
 } from "@/lib/types";
+import { CombinedBillModal } from "@/components/public/combined-bill-modal";
 import {
   isOfferActive,
   resolveBestOfferForItem,
@@ -68,7 +71,10 @@ export default function CustomerQROrderingPage({ params }: Props) {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [dietaryFilter, setDietaryFilter] = useState<"all" | DietaryClassification>("all");
   const [cartOpen, setCartOpen] = useState<boolean>(false);
+  const [activeSession, setActiveSession] = useState<DiningSession | null>(null);
+  const [billModalOpen, setBillModalOpen] = useState<boolean>(false);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
+  const SESSION_STORAGE_KEY = `restrocharge_dsess_${restaurantSlug}_${tableCode}`;
   const [loading, setLoading] = useState<boolean>(true);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
 
@@ -396,6 +402,27 @@ export default function CustomerQROrderingPage({ params }: Props) {
         const offersRes = await fetch(`/api/offers?restaurantId=${foundRest.id}`);
         const offersData = await offersRes.json();
         setOffers(offersData.offers || []);
+
+        // Load active customer dining session if present
+        const storedToken =
+          typeof window !== "undefined"
+            ? localStorage.getItem(SESSION_STORAGE_KEY)
+            : null;
+        if (storedToken) {
+          try {
+            const sessRes = await fetch(
+              `/api/dining-sessions?restaurantSlug=${restaurantSlug}&tableCode=${tableCode}&sessionToken=${encodeURIComponent(storedToken)}`
+            );
+            if (sessRes.ok) {
+              const sessData = await sessRes.json();
+              if (sessData.session && sessData.session.status === "ACTIVE") {
+                setActiveSession(sessData.session);
+              }
+            }
+          } catch {
+            // ignore session lookup network glitch
+          }
+        }
       } catch (err: any) {
         setErrorNotice("Unable to load digital menu. Please check your internet connection.");
       } finally {
@@ -595,12 +622,14 @@ export default function CustomerQROrderingPage({ params }: Props) {
 
     setIsSubmittingOrder(true);
     try {
+      const storedToken = typeof window !== "undefined" ? localStorage.getItem(SESSION_STORAGE_KEY) : null;
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           restaurantSlug,
           tableCode,
+          sessionToken: activeSession?.sessionToken || storedToken || undefined,
           items: cartItems.map((i) => ({
             productId: i.productId,
             name: i.name,
@@ -608,6 +637,7 @@ export default function CustomerQROrderingPage({ params }: Props) {
             portionName: i.portionName,
             quantity: i.quantity,
             isCombo: Boolean(i.isCombo),
+            appliedOfferId: (i as any).appliedOfferId || undefined,
           })),
           customerNotes,
           customerLocation: customerLocation
@@ -639,10 +669,18 @@ export default function CustomerQROrderingPage({ params }: Props) {
         throw new Error(data.error || "Failed to submit order");
       }
 
+      if (data.diningSession?.sessionToken) {
+        if (typeof window !== "undefined") {
+          localStorage.setItem(SESSION_STORAGE_KEY, data.diningSession.sessionToken);
+        }
+        setActiveSession(data.diningSession);
+      }
+
       clearCart();
       setCartOpen(false);
       toast.success(`Order ${data.orderNumber} placed successfully!`);
-      router.push(`/order/${restaurantSlug}/${tableCode}/order-status?orderId=${data.orderId}`);
+      const tokenParam = data.diningSession?.sessionToken ? `&sessionToken=${encodeURIComponent(data.diningSession.sessionToken)}` : "";
+      router.push(`/order/${restaurantSlug}/${tableCode}/order-status?orderId=${data.orderId}${tokenParam}`);
     } catch (err: any) {
       toast.error(err.message || "Failed to place order.");
     } finally {
@@ -774,6 +812,18 @@ export default function CustomerQROrderingPage({ params }: Props) {
                   title="Developer Location Test Simulator"
                 >
                   <Wrench className="h-4 w-4" />
+                </button>
+              )}
+
+              {activeSession && activeSession.items && activeSession.items.length > 0 && (
+                <button
+                  onClick={() => setBillModalOpen(true)}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition shadow-xs"
+                  title="View Running Customer Bill"
+                >
+                  <Receipt className="h-4 w-4 text-brand-400" />
+                  <span className="hidden sm:inline">Running Bill:</span>
+                  <span className="font-mono text-brand-300 font-bold">{formatCurrency(activeSession.billing.finalTotal)}</span>
                 </button>
               )}
 
@@ -2092,6 +2142,14 @@ export default function CustomerQROrderingPage({ params }: Props) {
             </div>
           </div>
         )}
+        {/* Continuous Customer Combined Bill Modal */}
+        <CombinedBillModal
+          isOpen={billModalOpen}
+          onClose={() => setBillModalOpen(false)}
+          session={activeSession}
+          restaurantName={restaurant?.name}
+          onOrderMore={() => setBillModalOpen(false)}
+        />
       </div>
     </div>
   );

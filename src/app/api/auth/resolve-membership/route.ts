@@ -143,8 +143,26 @@ export async function POST(req: NextRequest) {
     let matchingRestaurant = allRestaurants.find(
       (r) =>
         (r.ownerUid && r.ownerUid === uid) ||
-        (r.ownerEmail && r.ownerEmail.toLowerCase() === normalizedEmail)
+        (r.ownerEmail && normalizedEmail && r.ownerEmail.toLowerCase() === normalizedEmail)
     );
+
+    // If not found in memory/list, query Firestore directly by ownerEmail or ownerUid
+    if (!matchingRestaurant && adminDb && normalizedEmail) {
+      try {
+        const restByEmailSnap = await adminDb
+          .collection("restaurants")
+          .where("ownerEmail", "==", normalizedEmail)
+          .limit(1)
+          .get();
+        if (!restByEmailSnap.empty) {
+          const docData = restByEmailSnap.docs[0].data();
+          matchingRestaurant = { id: restByEmailSnap.docs[0].id, ...docData } as RestaurantProfile;
+          dataStore.saveRestaurantLocally(matchingRestaurant);
+        }
+      } catch (err: any) {
+        console.warn("[ResolveMembership] Direct ownerEmail query warning:", err.message);
+      }
+    }
 
     let assignedRole: UserRole | null = matchingRestaurant ? "RESTAURANT_OWNER" : null;
 
@@ -332,7 +350,7 @@ export async function POST(req: NextRequest) {
       restaurantId: null,
       restaurantName: null,
       restaurantSlug: null,
-      targetDashboard: "/",
+      targetDashboard: "/access-pending",
       message: "No active restaurant membership or team assignment found for this account.",
       requiresTokenRefresh: false,
     });

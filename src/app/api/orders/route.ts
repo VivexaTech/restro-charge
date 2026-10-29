@@ -12,6 +12,7 @@ import { getSubscriptionAccess } from "@/lib/services/subscription";
 import { verifyCustomerProximity } from "@/lib/services/geo";
 import { generateId, generateOrderNumber } from "@/lib/utils";
 import { OrderItem, OrderItemSnapshot, ProductItem, ProductPortion } from "@/lib/types";
+import { verifyRestaurantAccess, verifySuperAdminPermission } from "@/lib/auth/server-auth";
 import {
   resolveBestOfferForItem,
   validateAndEvaluateCombo,
@@ -457,9 +458,31 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const restaurantId = searchParams.get("restaurantId") || undefined;
+    const orderId = searchParams.get("orderId") || undefined;
 
-    let orders: OrderItem[] = [];
+    // 1. Single order lookup (e.g. customer checking status by orderId)
+    if (orderId) {
+      let order = dataStore.getOrderById(orderId);
+      if (!order && restaurantId) {
+        try {
+          const fromDb = await firestoreService.getOrders(restaurantId);
+          order = fromDb.find((o) => o.id === orderId) || null;
+        } catch {}
+      }
+      if (order) {
+        return NextResponse.json({ orders: [order] });
+      }
+      return NextResponse.json({ orders: [] });
+    }
+
+    // 2. Tenant restaurant order list (Requires verified staff/owner membership or Super Admin)
     if (restaurantId) {
+      const authCheck = await verifyRestaurantAccess(req, restaurantId);
+      if (!authCheck.authorized) {
+        return authCheck.errorResponse!;
+      }
+
+      let orders: OrderItem[] = [];
       try {
         const fromDb = await firestoreService.getOrders(restaurantId);
         if (fromDb && fromDb.length > 0) {
@@ -469,13 +492,22 @@ export async function GET(req: NextRequest) {
       } catch (e: any) {
         console.warn("[Orders API] Firestore getOrders warning:", e.message);
       }
+
+      if (orders.length === 0) {
+        orders = dataStore.getOrders(restaurantId);
+      }
+
+      return NextResponse.json({ orders });
     }
 
-    if (orders.length === 0) {
-      orders = dataStore.getOrders(restaurantId);
+    // 3. Platform-wide order list (Super Admin only)
+    const superCheck = await verifySuperAdminPermission(req);
+    if (!superCheck.authorized) {
+      return superCheck.errorResponse!;
     }
 
-    return NextResponse.json({ orders });
+    const allOrders = dataStore.getOrders();
+    return NextResponse.json({ orders: allOrders });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
