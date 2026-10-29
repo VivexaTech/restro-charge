@@ -28,18 +28,19 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<Authentica
   // 1. Verify Firebase ID token if present and Firebase Admin credentials are ready
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.substring(7).trim();
-    if (token && isFirebaseAdminReady()) {
+    if (token && token !== "dev" && token !== "superadmin" && token !== "dev_super_admin" && isFirebaseAdminReady()) {
       try {
         const decoded = await adminAuth.verifyIdToken(token);
+        // Only grant Super Admin if authorized custom claims are cryptographically present,
+        // or if UID matches the designated platform master and email is admin@vivexatech.in
         const isSuper =
-          decoded.uid === SUPER_ADMIN_UID ||
           decoded.role === "SUPER_ADMIN" ||
           decoded.superAdmin === true ||
-          Boolean(decoded.email?.endsWith("@vivexatech.in"));
+          (decoded.uid === SUPER_ADMIN_UID && decoded.email === "admin@vivexatech.in");
 
         const role: UserRole = isSuper
           ? "SUPER_ADMIN"
-          : (decoded.role as UserRole) || "RESTAURANT_OWNER";
+          : (decoded.role as UserRole) || "CUSTOMER_GUEST";
 
         return {
           uid: decoded.uid,
@@ -54,25 +55,43 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<Authentica
     }
   }
 
-  // 2. Inspect session user headers (x-user-* and x-dev-*)
-  const userUid = req.headers.get("x-user-uid") || req.headers.get("x-dev-uid");
-  const userRole = (req.headers.get("x-user-role") || req.headers.get("x-dev-role")) as UserRole;
-  const userEmail = req.headers.get("x-user-email");
-  const userRestaurantId = req.headers.get("x-user-restaurant-id") || req.headers.get("x-dev-restaurant-id");
+  // 2. Development-only mock/test token inspection (Strictly disabled in production)
+  if (process.env.NODE_ENV !== "production") {
+    if (authHeader === "Bearer dev_super_admin" || authHeader === "Bearer superadmin" || authHeader === "Bearer dev") {
+      return {
+        uid: SUPER_ADMIN_UID,
+        email: "admin@vivexatech.in",
+        role: "SUPER_ADMIN",
+        isSuperAdmin: true,
+      };
+    }
 
-  if (userUid) {
-    const isSuper =
-      userUid === SUPER_ADMIN_UID ||
-      userRole === "SUPER_ADMIN" ||
-      Boolean(userEmail?.endsWith("@vivexatech.in"));
+    // Inspect dev session user headers (only allowed in non-production)
+    const userUid = req.headers.get("x-user-uid") || req.headers.get("x-dev-uid");
+    const userRole = (req.headers.get("x-user-role") || req.headers.get("x-dev-role")) as UserRole;
+    const userEmail = req.headers.get("x-user-email");
+    const userRestaurantId = req.headers.get("x-user-restaurant-id") || req.headers.get("x-dev-restaurant-id");
 
-    return {
-      uid: userUid,
-      email: userEmail || (isSuper ? "admin@vivexatech.in" : undefined),
-      role: userRole || (isSuper ? "SUPER_ADMIN" : "CUSTOMER_GUEST"),
-      restaurantId: userRestaurantId || undefined,
-      isSuperAdmin: isSuper,
-    };
+    if (userUid) {
+      // Never allow an arbitrary user to elevate themselves to SUPER_ADMIN
+      const isSuper =
+        (userUid === SUPER_ADMIN_UID && userEmail === "admin@vivexatech.in") ||
+        (userRole === "SUPER_ADMIN" && userEmail === "admin@vivexatech.in");
+
+      const role: UserRole = isSuper
+        ? "SUPER_ADMIN"
+        : userRole && userRole !== "SUPER_ADMIN"
+        ? userRole
+        : "CUSTOMER_GUEST";
+
+      return {
+        uid: userUid,
+        email: userEmail || (isSuper ? "admin@vivexatech.in" : undefined),
+        role,
+        restaurantId: userRestaurantId || undefined,
+        isSuperAdmin: isSuper,
+      };
+    }
   }
 
   return null;
@@ -88,37 +107,11 @@ export async function verifySuperAdminPermission(req: NextRequest): Promise<{
 }> {
   const user = await getAuthenticatedUser(req);
 
-  // If no user identified from token/headers, inspect fallback for local test/dev or standalone preview
-  if (!user) {
-    const authHeader = req.headers.get("authorization");
-    const referer = req.headers.get("referer") || "";
-
-    // Allow in test/dev, or when Firebase Admin credentials are not initialized on this cloud host,
-    // or when the request originates from the Super Admin portal interface
-    if (
-      process.env.NODE_ENV !== "production" ||
-      !isFirebaseAdminReady() ||
-      referer.includes("/super-admin")
-    ) {
-      if (!authHeader || authHeader === "Bearer dev" || authHeader === "Bearer superadmin") {
-        return {
-          authorized: true,
-          user: {
-            uid: SUPER_ADMIN_UID,
-            email: "admin@vivexatech.in",
-            role: "SUPER_ADMIN",
-            isSuperAdmin: true,
-          },
-        };
-      }
-    }
-  }
-
   if (!user) {
     return {
       authorized: false,
       errorResponse: NextResponse.json(
-        { error: "Authentication required. Please provide a valid Firebase ID token or session." },
+        { error: "Authentication required. Please provide a valid Firebase ID token." },
         { status: 401 }
       ),
     };

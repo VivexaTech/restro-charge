@@ -22,7 +22,7 @@ import { toast } from "sonner";
 
 export default function StaffFloorOrdersPage() {
   const { user } = useAuth();
-  const currentRestaurantId = user?.restaurantId || "rest_vivexa_01";
+  const currentRestaurantId = user?.restaurantId || "";
 
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -30,6 +30,11 @@ export default function StaffFloorOrdersPage() {
   const previousOrderCount = useRef<number>(0);
 
   const fetchOrders = async () => {
+    if (!currentRestaurantId) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
     try {
       const res = await fetch(`/api/orders?restaurantId=${currentRestaurantId}`);
       const data = await res.json();

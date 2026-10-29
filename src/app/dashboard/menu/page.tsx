@@ -11,8 +11,10 @@ import {
   Upload,
   Layers,
   Sparkles,
+  Store,
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
+import { useActiveRestaurant } from "@/lib/hooks/use-active-restaurant";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +26,14 @@ import { authFetch } from "@/lib/auth/client-auth";
 
 export default function RestaurantMenuManagementPage() {
   const { user } = useAuth();
-  const currentRestaurantId = user?.restaurantId || "rest_vivexa_01";
+  const {
+    restaurantId: currentRestaurantId,
+    restaurant: activeRestaurant,
+    allRestaurants,
+    selectRestaurant,
+    isSuperAdmin,
+    loading: resLoading,
+  } = useActiveRestaurant();
 
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [products, setProducts] = useState<ProductItem[]>([]);
@@ -58,6 +67,12 @@ export default function RestaurantMenuManagementPage() {
   const [catDescription, setCatDescription] = useState("");
 
   const loadMenuData = async () => {
+    if (!currentRestaurantId) {
+      setCategories([]);
+      setProducts([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const catRes = await fetch(`/api/categories?restaurantId=${currentRestaurantId}`);
@@ -265,7 +280,7 @@ export default function RestaurantMenuManagementPage() {
   );
 
   return (
-    <div className="p-8 max-w-7xl mx-auto w-full space-y-8">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6 sm:space-y-8 overflow-x-hidden">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
           <span className="text-xs font-semibold text-brand-600 uppercase tracking-wider">
@@ -279,17 +294,63 @@ export default function RestaurantMenuManagementPage() {
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
-          <Button variant="outline" size="sm" onClick={() => setIsCategoryModalOpen(true)}>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+          <Button variant="outline" size="sm" onClick={() => setIsCategoryModalOpen(true)} className="flex-1 sm:flex-initial text-xs">
             <Layers className="h-4 w-4 mr-1.5" />
             Add Category
           </Button>
-          <Button size="sm" onClick={openNewProduct} className="font-semibold shadow-sm">
+          <Button size="sm" onClick={openNewProduct} className="flex-1 sm:flex-initial text-xs font-semibold shadow-sm">
             <Plus className="h-4 w-4 mr-1.5" />
             Add Dish / Item
           </Button>
         </div>
       </div>
+
+      {/* Multi-tenant Venue Switcher Banner (Visible to Super Admin or Multi-restaurant Managers) */}
+      {(isSuperAdmin || allRestaurants.length > 1) && (
+        <div className="bg-brand-50/70 border border-brand-200/70 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center space-x-3">
+            <div className="h-9 w-9 rounded-xl bg-brand-500/10 text-brand-700 flex items-center justify-center shrink-0">
+              <Store className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-bold text-slate-900">
+                  {activeRestaurant?.name || (currentRestaurantId ? `Restaurant: ${currentRestaurantId}` : "No Venue Selected")}
+                </span>
+                {isSuperAdmin && (
+                  <Badge variant="default" className="text-[10px] py-0 px-2 font-semibold">
+                    Super Admin Scope
+                  </Badge>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Menu categories and food items are scoped to this restaurant venue.
+              </p>
+            </div>
+          </div>
+
+          {allRestaurants.length > 0 && (
+            <div className="flex items-center space-x-2 w-full sm:w-auto">
+              <label htmlFor="menu-venue-select" className="text-xs font-semibold text-slate-700 whitespace-nowrap">
+                Switch Venue:
+              </label>
+              <select
+                id="menu-venue-select"
+                value={currentRestaurantId}
+                onChange={(e) => selectRestaurant(e.target.value)}
+                className="text-xs font-semibold bg-white border border-slate-300 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-xs cursor-pointer w-full sm:w-auto"
+              >
+                {allRestaurants.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} ({r.slug})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Category Pills */}
       <div className="flex items-center space-x-2 overflow-x-auto pb-1 no-scrollbar">

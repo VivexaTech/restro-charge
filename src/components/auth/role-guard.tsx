@@ -63,7 +63,10 @@ export function RoleGuard({
   const hasAccess = allowedRoles.includes(role);
   if (!hasAccess) {
     const targetRedirect =
-      role === "SUPER_ADMIN"
+      role === "SUPER_ADMIN" ||
+      role === "SALES_MANAGER" ||
+      role === "ONBOARDING_EXECUTIVE" ||
+      role === "SUPPORT_EXECUTIVE"
         ? "/super-admin"
         : role === "RESTAURANT_OWNER" || role === "RESTAURANT_MANAGER"
         ? "/dashboard"

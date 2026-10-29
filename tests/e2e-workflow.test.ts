@@ -154,6 +154,7 @@ async function runE2E() {
     description: "Saffron infused dum biryani with tender cuts.",
     price: 350, // True database price
     isVeg: false,
+    dietaryType: "non_veg",
     isAvailable: true,
     sortOrder: 1,
     createdAt: new Date().toISOString(),

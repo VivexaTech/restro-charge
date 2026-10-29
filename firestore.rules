@@ -9,37 +9,55 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isAuthenticated() && (
-        request.auth.uid == 'GDF2eldrzSNR9oltgezCr9MXt0I3' ||
         request.auth.token.role == 'SUPER_ADMIN' ||
         request.auth.token.superAdmin == true ||
-        request.auth.token.email.matches('.*@vivexatech[.]in$')
+        (request.auth.uid == 'GDF2eldrzSNR9oltgezCr9MXt0I3' && request.auth.token.email == 'admin@vivexatech.in')
+      );
+    }
+
+    function isVivexaStaff() {
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        request.auth.token.organization == 'VIVEXA_TECH' ||
+        request.auth.token.role in ['SALES_MANAGER', 'ONBOARDING_EXECUTIVE', 'SUPPORT_EXECUTIVE']
       );
     }
 
     function isRestaurantStaff(restaurantId) {
       return isAuthenticated() && (
         request.auth.token.restaurantId == restaurantId ||
-        request.auth.token.role == 'SUPER_ADMIN'
+        isSuperAdmin()
       );
     }
 
     function isRestaurantOwner(restaurantId) {
       return isAuthenticated() && (
         (request.auth.token.restaurantId == restaurantId && request.auth.token.role == 'RESTAURANT_OWNER') ||
-        request.auth.token.role == 'SUPER_ADMIN'
+        isSuperAdmin()
       );
     }
 
     // Users Collection
     match /users/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isVivexaStaff());
       allow write: if isSuperAdmin();
+    }
+
+    // Restaurant Memberships Collection
+    match /restaurantMemberships/{membershipId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid == resource.data.uid ||
+        request.auth.uid == resource.data.userId ||
+        request.auth.token.restaurantId == resource.data.restaurantId ||
+        isVivexaStaff()
+      );
+      allow write: if isSuperAdmin() || (isAuthenticated() && request.auth.token.role == 'RESTAURANT_OWNER' && request.auth.token.restaurantId == request.resource.data.restaurantId);
     }
 
     // Restaurants Collection
     match /restaurants/{restaurantId} {
       // Anyone can read published restaurants
-      allow read: if resource.data.published == true || isRestaurantStaff(restaurantId);
+      allow read: if resource.data.published == true || isRestaurantStaff(restaurantId) || isVivexaStaff();
       // Only Super Admin can create or delete restaurants
       allow create, delete: if isSuperAdmin();
       // Restaurant Owner can update permitted profile & branding (excluding locationSettings & subscription); Super Admin can update all
@@ -56,6 +74,13 @@ service cloud.firestore {
         allow write: if isRestaurantStaff(restaurantId);
       }
 
+      match /offers/{offerId} {
+        // Public restaurant visitors and QR diners can view active offers
+        allow read: if true;
+        // Only restaurant staff, owner, or Vivexa Super Admin can create/update offers
+        allow write: if isRestaurantStaff(restaurantId) || isRestaurantOwner(restaurantId) || isSuperAdmin();
+      }
+
       match /tables/{tableId} {
         allow read: if true;
         // Strictly only Vivexa Super Admin can create or issue table QR codes
@@ -70,12 +95,17 @@ service cloud.firestore {
         allow delete: if isSuperAdmin();
       }
 
+      match /diningSessions/{sessionId} {
+        allow read: if true;
+        allow write: if isRestaurantStaff(restaurantId);
+      }
+
       match /staff/{staffId} {
-        allow read, write: if isRestaurantOwner(restaurantId);
+        allow read, write: if isRestaurantOwner(restaurantId) || isSuperAdmin();
       }
 
       match /subscriptionHistory/{historyId} {
-        allow read: if isRestaurantOwner(restaurantId);
+        allow read: if isRestaurantOwner(restaurantId) || isVivexaStaff();
         allow write: if isSuperAdmin();
       }
     }
@@ -83,7 +113,7 @@ service cloud.firestore {
     // Public Registration Requests
     match /restaurantRequests/{requestId} {
       allow create: if true;
-      allow read, update, delete: if isSuperAdmin();
+      allow read, update, delete: if isVivexaStaff();
     }
 
     // Central Subscription Plans
@@ -95,7 +125,7 @@ service cloud.firestore {
     // Subscription Payments
     match /subscriptionPayments/{paymentId} {
       allow read: if isAuthenticated() && (
-        request.auth.token.restaurantId == resource.data.restaurantId || isSuperAdmin()
+        request.auth.token.restaurantId == resource.data.restaurantId || isVivexaStaff()
       );
       allow write: if isSuperAdmin();
     }

@@ -45,7 +45,7 @@ export default function SuperAdminDashboardPage() {
     .reduce((sum, p) => sum + (p.amount || 0), 0);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto w-full space-y-8">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6 sm:space-y-8 overflow-x-hidden">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
@@ -60,15 +60,15 @@ export default function SuperAdminDashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
-          <Link href="/super-admin/tables">
-            <Button size="sm" className="font-semibold shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <Link href="/super-admin/tables" className="flex-1 sm:flex-initial">
+            <Button size="sm" className="w-full sm:w-auto font-semibold shadow-sm text-xs">
               <QrCode className="h-4 w-4 mr-1.5" />
               Generate Table QRs
             </Button>
           </Link>
-          <Link href="/super-admin/onboarding">
-            <Button variant="outline" size="sm">
+          <Link href="/super-admin/onboarding" className="flex-1 sm:flex-initial">
+            <Button variant="outline" size="sm" className="w-full sm:w-auto text-xs">
               <UserPlus className="h-4 w-4 mr-1.5" />
               Review Requests ({pendingRequests.length})
             </Button>

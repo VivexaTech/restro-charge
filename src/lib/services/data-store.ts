@@ -14,6 +14,9 @@ import type {
   RestaurantRegistrationRequest,
   SubscriptionPaymentRecord,
   AdminAuditLog,
+  DiningSession,
+  RestaurantMembership,
+  RestaurantOffer,
 } from "../types";
 import {
   SEED_RESTAURANTS,
@@ -37,6 +40,9 @@ class DataStore {
   private plans: Map<string, SubscriptionPlan> = new Map();
   private requests: Map<string, RestaurantRegistrationRequest> = new Map();
   private payments: Map<string, SubscriptionPaymentRecord> = new Map();
+  private diningSessions: Map<string, DiningSession> = new Map();
+  private memberships: Map<string, RestaurantMembership> = new Map();
+  private offers: Map<string, RestaurantOffer> = new Map();
   private auditLogs: AdminAuditLog[] = [];
   private processedEvents: Set<string> = new Set();
   private orderListeners: Array<(orders: OrderItem[]) => void> = [];
@@ -88,6 +94,10 @@ class DataStore {
     return this.restaurants.get(restaurant.id)!;
   }
 
+  public saveRestaurantLocally(restaurant: RestaurantProfile): void {
+    this.restaurants.set(restaurant.id, { ...restaurant });
+  }
+
   // --- CATEGORIES ---
   public getCategories(restaurantId: string): ProductCategory[] {
     return Array.from(this.categories.values())
@@ -132,6 +142,40 @@ class DataStore {
       firestoreService.deleteProduct(prod.restaurantId, id).catch((err) => console.warn("[DataStore] firestore deleteProduct sync:", err.message));
     }
     return this.products.delete(id);
+  }
+
+  // --- OFFERS & DISCOUNTS ---
+  public getOffers(restaurantId: string): RestaurantOffer[] {
+    return Array.from(this.offers.values())
+      .filter((o) => o.restaurantId === restaurantId)
+      .sort((a, b) => (b.priority || 1) - (a.priority || 1));
+  }
+
+  public getOfferById(id: string): RestaurantOffer | null {
+    return this.offers.get(id) || null;
+  }
+
+  public saveOffer(offer: RestaurantOffer): RestaurantOffer {
+    const updated = { ...offer, updatedAt: new Date().toISOString() };
+    this.offers.set(offer.id, updated);
+    firestoreService
+      .saveOffer(offer.restaurantId, updated)
+      .catch((err) => console.warn("[DataStore] firestore saveOffer sync:", err.message));
+    return updated;
+  }
+
+  public saveOfferLocally(offer: RestaurantOffer): void {
+    this.offers.set(offer.id, { ...offer });
+  }
+
+  public deleteOffer(restaurantId: string, id: string): boolean {
+    const offer = this.offers.get(id);
+    if (offer) {
+      firestoreService
+        .deleteOffer(restaurantId, id)
+        .catch((err) => console.warn("[DataStore] firestore deleteOffer sync:", err.message));
+    }
+    return this.offers.delete(id);
   }
 
   // --- TABLES & QR (SUPER ADMIN EXCLUSIVE GENERATION) ---
@@ -277,6 +321,56 @@ class DataStore {
 
   public markWebhookEventProcessed(eventId: string): void {
     this.processedEvents.add(eventId);
+  }
+
+  // --- DINING SESSIONS & COMBINED BILLING ---
+  public getDiningSessionById(id: string): DiningSession | null {
+    return this.diningSessions.get(id) || null;
+  }
+
+  public getDiningSessionByTokenHash(hash: string): DiningSession | null {
+    return Array.from(this.diningSessions.values()).find((s) => s.sessionTokenHash === hash) || null;
+  }
+
+  public getActiveDiningSessionForTable(restaurantId: string, tableId: string): DiningSession | null {
+    return (
+      Array.from(this.diningSessions.values()).find(
+        (s) => s.restaurantId === restaurantId && (s.tableId === tableId || s.tableCode === tableId) && s.status === "ACTIVE"
+      ) || null
+    );
+  }
+
+  public saveDiningSessionLocally(session: DiningSession): void {
+    this.diningSessions.set(session.id, { ...session });
+  }
+
+  public saveDiningSession(session: DiningSession): DiningSession {
+    const updated = { ...session, updatedAt: new Date().toISOString() };
+    this.diningSessions.set(session.id, updated);
+    firestoreService.saveDiningSession(updated).catch((err) =>
+      console.warn("[DataStore] firestore saveDiningSession sync:", err.message)
+    );
+    return updated;
+  }
+
+  // --- RESTAURANT MEMBERSHIPS ---
+  public getMembershipsForUser(uid: string): RestaurantMembership[] {
+    return Array.from(this.memberships.values()).filter(
+      (m) => (m.uid === uid || m.userId === uid) && m.status === "ACTIVE"
+    );
+  }
+
+  public saveMembershipLocally(membership: RestaurantMembership): void {
+    this.memberships.set(membership.id, { ...membership });
+  }
+
+  public saveMembership(membership: RestaurantMembership): RestaurantMembership {
+    const updated = { ...membership, updatedAt: new Date().toISOString() };
+    this.memberships.set(membership.id, updated);
+    firestoreService.saveMembership(updated).catch((err) =>
+      console.warn("[DataStore] firestore saveMembership sync:", err.message)
+    );
+    return updated;
   }
 
   // --- AUDIT LOGS ---

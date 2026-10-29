@@ -145,7 +145,7 @@ export default function SuperAdminTablesAndQRPage() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto w-full space-y-8">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6 sm:space-y-8 overflow-x-hidden">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
@@ -162,12 +162,13 @@ export default function SuperAdminTablesAndQRPage() {
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
           <Button
             variant="outline"
             size="sm"
             onClick={() => setPrintSheetOpen(true)}
             disabled={tables.length === 0}
+            className="flex-1 sm:flex-initial text-xs"
           >
             <Printer className="h-4 w-4 mr-1.5" />
             Printable Sheet ({tables.length})
@@ -176,7 +177,7 @@ export default function SuperAdminTablesAndQRPage() {
             size="sm"
             onClick={() => setIsModalOpen(true)}
             disabled={!selectedRestId}
-            className="font-semibold shadow-sm"
+            className="flex-1 sm:flex-initial text-xs font-semibold shadow-sm"
           >
             <Plus className="h-4 w-4 mr-1.5" />
             Provision New Table

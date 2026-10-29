@@ -24,7 +24,7 @@ import { toast } from "sonner";
 
 export default function RestaurantSubscriptionDashboardPage() {
   const { user } = useAuth();
-  const currentRestaurantId = user?.restaurantId || "rest_vivexa_01";
+  const currentRestaurantId = user?.restaurantId || "";
 
   const [restaurant, setRestaurant] = useState<RestaurantProfile | null>(null);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -37,6 +37,11 @@ export default function RestaurantSubscriptionDashboardPage() {
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   const loadSubscriptionInfo = async () => {
+    if (!currentRestaurantId) {
+      setRestaurant(null);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const res = await fetch(`/api/restaurants/${currentRestaurantId}`);
@@ -126,7 +131,7 @@ export default function RestaurantSubscriptionDashboardPage() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto w-full space-y-8">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6 sm:space-y-8 overflow-x-hidden">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
@@ -141,11 +146,11 @@ export default function RestaurantSubscriptionDashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-3 w-full sm:w-auto">
           <Button
             onClick={() => setIsRenewModalOpen(true)}
             size="sm"
-            className="font-semibold shadow-sm"
+            className="w-full sm:w-auto font-semibold shadow-sm text-xs"
           >
             <RefreshCw className="h-4 w-4 mr-1.5" />
             Renew / Change Plan

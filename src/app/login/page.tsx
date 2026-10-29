@@ -28,16 +28,37 @@ export default function LoginPage() {
     setIsLoading(false);
 
     if (res.success) {
-      toast.success("Welcome back!");
-      if (email.includes("vivexa") || email.includes("admin")) {
+      toast.success("Authentication successful. Welcome back!");
+      const vivexaTeamRoles = ["SUPER_ADMIN", "SALES_MANAGER", "ONBOARDING_EXECUTIVE", "SUPPORT_EXECUTIVE"];
+      if (res.role && vivexaTeamRoles.includes(res.role)) {
         router.push("/super-admin");
-      } else if (email.includes("kitchen")) {
+      } else if (res.role === "KITCHEN_STAFF" || res.role === "ORDER_STAFF") {
         router.push("/staff");
       } else {
         router.push("/dashboard");
       }
     } else {
       toast.error(res.error || "Login failed.");
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    const res = await loginWithGoogle();
+    setIsLoading(false);
+
+    if (res.success) {
+      toast.success("Signed in with Google.");
+      const vivexaTeamRoles = ["SUPER_ADMIN", "SALES_MANAGER", "ONBOARDING_EXECUTIVE", "SUPPORT_EXECUTIVE"];
+      if (res.role && vivexaTeamRoles.includes(res.role)) {
+        router.push("/super-admin");
+      } else if (res.role === "KITCHEN_STAFF" || res.role === "ORDER_STAFF") {
+        router.push("/staff");
+      } else {
+        router.push("/dashboard");
+      }
+    } else {
+      toast.error(res.error || "Google sign-in failed.");
     }
   };
 
@@ -116,11 +137,9 @@ export default function LoginPage() {
           <div className="mt-4">
             <button
               type="button"
-              onClick={async () => {
-                await loginWithGoogle();
-                router.push("/super-admin");
-              }}
-              className="w-full flex items-center justify-center px-4 py-2 border border-slate-300 rounded-lg shadow-sm text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition"
+              disabled={isLoading}
+              onClick={handleGoogleLogin}
+              className="w-full flex items-center justify-center px-4 py-2.5 border border-slate-300 rounded-lg shadow-sm text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition disabled:opacity-50"
             >
               <svg className="h-4 w-4 mr-2" viewBox="0 0 24 24">
                 <path

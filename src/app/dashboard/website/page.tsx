@@ -14,9 +14,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RestaurantProfile } from "@/lib/types";
+import { useAuth } from "@/context/auth-context";
 import { toast } from "sonner";
 
 export default function RestaurantWebsiteCustomizerPage() {
+  const { user } = useAuth();
+  const currentRestaurantId = user?.restaurantId || "";
   const [restaurant, setRestaurant] = useState<RestaurantProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -44,23 +47,28 @@ export default function RestaurantWebsiteCustomizerPage() {
 
   useEffect(() => {
     async function load() {
+      if (!currentRestaurantId) {
+        setRestaurant(null);
+        setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
-        const res = await fetch("/api/restaurants/rest_vivexa_01");
+        const res = await fetch(`/api/restaurants/${currentRestaurantId}`);
         const data = await res.json();
         const r: RestaurantProfile = data.restaurant;
         if (r) {
           setRestaurant(r);
-          setPrimaryColor(r.branding.primaryColor || "#ea580c");
-          setFontPreset(r.branding.fontPreset || "outfit");
-          setHeroTitle(r.websiteConfig.heroTitle || "");
-          setHeroSubtitle(r.websiteConfig.heroSubtitle || "");
-          setAboutText(r.websiteConfig.aboutText || "");
-          setContactPhone(r.websiteConfig.contactPhone || "");
-          setContactEmail(r.websiteConfig.contactEmail || "");
-          setAddress(r.websiteConfig.address || "");
-          setCoverImageUrl(r.branding.coverImageUrl || "");
-          if (r.websiteConfig.sectionsVisibility) {
+          setPrimaryColor(r.branding?.primaryColor || "#ea580c");
+          setFontPreset(r.branding?.fontPreset || "outfit");
+          setHeroTitle(r.websiteConfig?.heroTitle || "");
+          setHeroSubtitle(r.websiteConfig?.heroSubtitle || "");
+          setAboutText(r.websiteConfig?.aboutText || "");
+          setContactPhone(r.websiteConfig?.contactPhone || "");
+          setContactEmail(r.websiteConfig?.contactEmail || "");
+          setAddress(r.websiteConfig?.address || "");
+          setCoverImageUrl(r.branding?.coverImageUrl || "");
+          if (r.websiteConfig?.sectionsVisibility) {
             setSections(r.websiteConfig.sectionsVisibility);
           }
         }
@@ -71,13 +79,17 @@ export default function RestaurantWebsiteCustomizerPage() {
       }
     }
     load();
-  }, []);
+  }, [currentRestaurantId]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentRestaurantId) {
+      toast.error("No restaurant linked to this account.");
+      return;
+    }
     setIsSaving(true);
     try {
-      const res = await fetch("/api/restaurants/rest_vivexa_01", {
+      const res = await fetch(`/api/restaurants/${currentRestaurantId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -112,7 +124,7 @@ export default function RestaurantWebsiteCustomizerPage() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto w-full space-y-8">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6 sm:space-y-8 overflow-x-hidden">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
           <span className="text-xs font-semibold text-brand-600 uppercase tracking-wider">

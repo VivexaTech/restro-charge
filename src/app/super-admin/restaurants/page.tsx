@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   Store,
@@ -19,10 +19,18 @@ import {
   X,
   Save,
   ShieldCheck,
+  Plus,
+  Upload,
+  Loader2,
+  Calendar,
+  Globe,
+  QrCode,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Modal } from "@/components/ui/modal";
 import { RestaurantProfile } from "@/lib/types";
 import { toast } from "sonner";
 import { authFetch } from "@/lib/auth/client-auth";
@@ -32,7 +40,47 @@ export default function SuperAdminRestaurantsPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>("");
 
-  // Location & Security Modal State
+  // Add Restaurant Modal State
+  const [addModalOpen, setAddModalOpen] = useState<boolean>(false);
+  const [isSubmittingRest, setIsSubmittingRest] = useState<boolean>(false);
+  const [provisioningRestId, setProvisioningRestId] = useState<string | null>(null);
+  const [slugStatus, setSlugStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState<boolean>(false);
+  const slugCheckTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // Add Restaurant Form Fields
+  const [formData, setFormData] = useState({
+    name: "",
+    slug: "",
+    adminEmail: "",
+    contactNumber: "",
+    status: "ACTIVE",
+    planId: "plan_starter",
+    description: "",
+    logoUrl: "",
+    coverImageUrl: "",
+    address: "",
+    city: "Jaipur",
+    state: "Rajasthan",
+    postalCode: "302001",
+    country: "India",
+    email: "",
+    websiteUrl: "",
+    openingHours: "11:00 AM - 11:00 PM",
+    instagram: "",
+    facebook: "",
+    twitter: "",
+    latitude: "",
+    longitude: "",
+    orderingRadiusMetres: 200,
+    locationRestrictionEnabled: false,
+    subscriptionStatus: "ACTIVE",
+    trialDurationDays: 14,
+    published: true,
+    qrOrderingEnabled: true,
+  });
+
+  // Location & Security Modal State (Existing)
   const [locModalOpen, setLocModalOpen] = useState<boolean>(false);
   const [selectedRest, setSelectedRest] = useState<RestaurantProfile | null>(null);
   const [locEnabled, setLocEnabled] = useState<boolean>(false);
@@ -149,6 +197,215 @@ export default function SuperAdminRestaurantsPage() {
     loadRestaurants();
   }, []);
 
+  // Slug auto-generation & uniqueness check
+  const handleNameChange = (val: string) => {
+    setFormData((prev) => {
+      const next = { ...prev, name: val };
+      if (!slugManuallyEdited) {
+        const autoSlug = val
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9-]/g, "-")
+          .replace(/-+/g, "-")
+          .replace(/^-|-$/g, "");
+        next.slug = autoSlug;
+        triggerSlugCheck(autoSlug);
+      }
+      return next;
+    });
+  };
+
+  const handleSlugChange = (val: string) => {
+    setSlugManuallyEdited(true);
+    const clean = val
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/-+/g, "-");
+    setFormData((prev) => ({ ...prev, slug: clean }));
+    triggerSlugCheck(clean);
+  };
+
+  const triggerSlugCheck = (slugToCheck: string) => {
+    if (slugCheckTimer.current) clearTimeout(slugCheckTimer.current);
+    if (!slugToCheck || slugToCheck.length < 2) {
+      setSlugStatus("idle");
+      return;
+    }
+    setSlugStatus("checking");
+    slugCheckTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/restaurants/check-slug?slug=${encodeURIComponent(slugToCheck)}`);
+        const data = await res.json();
+        if (data.available) {
+          setSlugStatus("available");
+        } else {
+          setSlugStatus("taken");
+        }
+      } catch {
+        setSlugStatus("idle");
+      }
+    }, 400);
+  };
+
+  const handleFileUpload = async (file: File, field: "logoUrl" | "coverImageUrl") => {
+    const uploadToast = toast.loading("Uploading image to Cloudinary...");
+    try {
+      const data = new FormData();
+      data.append("file", file);
+      data.append("folder", "restaurants");
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: data,
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Upload failed");
+
+      setFormData((prev) => ({ ...prev, [field]: result.url }));
+      toast.success("Image uploaded successfully!", { id: uploadToast });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to upload image", { id: uploadToast });
+    }
+  };
+
+  const resetAddForm = () => {
+    setFormData({
+      name: "",
+      slug: "",
+      adminEmail: "",
+      contactNumber: "",
+      status: "ACTIVE",
+      planId: "plan_starter",
+      description: "",
+      logoUrl: "",
+      coverImageUrl: "",
+      address: "",
+      city: "Jaipur",
+      state: "Rajasthan",
+      postalCode: "302001",
+      country: "India",
+      email: "",
+      websiteUrl: "",
+      openingHours: "11:00 AM - 11:00 PM",
+      instagram: "",
+      facebook: "",
+      twitter: "",
+      latitude: "",
+      longitude: "",
+      orderingRadiusMetres: 200,
+      locationRestrictionEnabled: false,
+      subscriptionStatus: "ACTIVE",
+      trialDurationDays: 14,
+      published: true,
+      qrOrderingEnabled: true,
+    });
+    setSlugManuallyEdited(false);
+    setSlugStatus("idle");
+  };
+
+  const handleCreateRestaurant = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Required Field Validations
+    if (!formData.name.trim() || formData.name.trim().length < 2) {
+      toast.error("Please enter a valid Restaurant Name (min 2 characters).");
+      return;
+    }
+    if (!formData.slug.trim() || formData.slug.trim().length < 2) {
+      toast.error("Please enter a valid Restaurant Slug.");
+      return;
+    }
+    if (slugStatus === "taken") {
+      toast.error("The specified slug is already taken. Please choose a unique slug.");
+      return;
+    }
+    if (!formData.adminEmail.trim() || !/^\S+@\S+\.\S+$/.test(formData.adminEmail)) {
+      toast.error("Please enter a valid Restaurant Admin Email.");
+      return;
+    }
+    if (!formData.contactNumber.trim() || formData.contactNumber.trim().length < 7) {
+      toast.error("Please enter a valid Contact Number (min 7 digits).");
+      return;
+    }
+
+    // Latitude / Longitude bounds
+    if (formData.latitude.trim()) {
+      const lat = parseFloat(formData.latitude);
+      if (isNaN(lat) || lat < -90 || lat > 90) {
+        toast.error("Latitude must be between -90 and 90 degrees.");
+        return;
+      }
+    }
+    if (formData.longitude.trim()) {
+      const lon = parseFloat(formData.longitude);
+      if (isNaN(lon) || lon < -180 || lon > 180) {
+        toast.error("Longitude must be between -180 and 180 degrees.");
+        return;
+      }
+    }
+
+    setIsSubmittingRest(true);
+    const saveToast = toast.loading("Creating restaurant in Firestore...");
+
+    try {
+      const res = await authFetch("/api/restaurants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create restaurant");
+
+      if (data.adminProvisioning?.status === "PROVISIONED") {
+        toast.success(
+          `Restaurant "${data.restaurant.name}" created and Admin account provisioned for ${data.restaurant.ownerEmail}!`,
+          { id: saveToast, duration: 5000 }
+        );
+      } else {
+        toast.warning(
+          `Restaurant "${data.restaurant.name}" created! Admin provisioning is ${data.adminProvisioning?.status || "PENDING"}: ${data.adminProvisioning?.message || "Pending configuration"}. You can retry provisioning anytime.`,
+          { id: saveToast, duration: 7000 }
+        );
+      }
+
+      setAddModalOpen(false);
+      resetAddForm();
+      await loadRestaurants();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create restaurant", { id: saveToast });
+    } finally {
+      setIsSubmittingRest(false);
+    }
+  };
+
+  const handleProvisionAdmin = async (r: RestaurantProfile) => {
+    setProvisioningRestId(r.id);
+    const pToast = toast.loading(`Provisioning Restaurant Admin account for ${r.ownerEmail}...`);
+    try {
+      const res = await authFetch(`/api/restaurants/${r.id}/provision-admin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminEmail: r.ownerEmail, adminName: r.ownerName }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || data.error || "Admin provisioning failed");
+      }
+      toast.success(data.adminProvisioning?.message || `Admin account provisioned for ${r.ownerEmail}!`, {
+        id: pToast,
+        duration: 5000,
+      });
+      await loadRestaurants();
+    } catch (err: any) {
+      toast.error(`Admin Provisioning Error: ${err.message}`, { id: pToast, duration: 7000 });
+      await loadRestaurants();
+    } finally {
+      setProvisioningRestId(null);
+    }
+  };
+
   const handleTogglePublish = async (id: string, currentPublished: boolean) => {
     try {
       const res = await authFetch(`/api/restaurants/${id}`, {
@@ -213,7 +470,8 @@ export default function SuperAdminRestaurantsPage() {
   );
 
   return (
-    <div className="p-8 max-w-7xl mx-auto w-full space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6 overflow-x-hidden">
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
           <span className="text-xs font-semibold text-brand-600 uppercase tracking-wider">
@@ -227,14 +485,24 @@ export default function SuperAdminRestaurantsPage() {
           </p>
         </div>
 
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-          <Input
-            placeholder="Search venue or slug..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 text-xs"
-          />
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <Input
+              placeholder="Search venue or slug..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 text-xs"
+            />
+          </div>
+          <Button
+            onClick={() => setAddModalOpen(true)}
+            size="sm"
+            className="font-semibold shadow-sm shrink-0 whitespace-nowrap bg-brand-600 hover:bg-brand-700 text-white"
+          >
+            <Plus className="h-4 w-4 mr-1.5" />
+            Add Restaurant
+          </Button>
         </div>
       </div>
 
@@ -295,7 +563,47 @@ export default function SuperAdminRestaurantsPage() {
 
                     <td className="py-3.5 px-4 text-slate-600">
                       <span className="font-medium text-slate-800 block">{r.ownerName}</span>
-                      <span className="text-slate-400 text-[11px]">{r.ownerEmail}</span>
+                      <span className="text-slate-400 text-[11px] block">{r.ownerEmail}</span>
+                      <div className="mt-1 flex items-center space-x-1.5 flex-wrap gap-y-1">
+                        {r.adminProvisioningStatus === "PROVISIONED" ? (
+                          <span className="inline-flex items-center text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            <ShieldCheck className="h-3 w-3 mr-1 text-emerald-600" />
+                            Admin Provisioned
+                          </span>
+                        ) : r.adminProvisioningStatus === "FAILED" ? (
+                          <div className="flex items-center space-x-1.5">
+                            <span
+                              className="inline-flex items-center text-[10px] font-semibold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200"
+                              title={r.adminProvisioningError || "Provisioning failed"}
+                            >
+                              <ShieldAlert className="h-3 w-3 mr-1 text-rose-600" />
+                              Auth Failed
+                            </span>
+                            <button
+                              onClick={() => handleProvisionAdmin(r)}
+                              disabled={provisioningRestId === r.id}
+                              className="text-[10px] font-semibold text-brand-600 hover:text-brand-800 underline disabled:opacity-50"
+                              title="Retry provisioning Restaurant Admin account"
+                            >
+                              {provisioningRestId === r.id ? "Retrying..." : "Retry"}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center space-x-1.5">
+                            <span className="inline-flex items-center text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                              Admin Pending
+                            </span>
+                            <button
+                              onClick={() => handleProvisionAdmin(r)}
+                              disabled={provisioningRestId === r.id}
+                              className="text-[10px] font-semibold text-brand-600 hover:text-brand-800 underline disabled:opacity-50"
+                              title="Provision Restaurant Admin account now"
+                            >
+                              {provisioningRestId === r.id ? "Provisioning..." : "Provision"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </td>
 
                     <td className="py-3.5 px-4">
@@ -629,6 +937,443 @@ export default function SuperAdminRestaurantsPage() {
           </div>
         </div>
       )}
+
+      {/* ==================================================================== */}
+      {/* ADD RESTAURANT MODAL (ISSUE 2 RESOLUTION)                            */}
+      {/* ==================================================================== */}
+      <Modal
+        isOpen={addModalOpen}
+        onClose={() => !isSubmittingRest && setAddModalOpen(false)}
+        title="Provision New Restaurant"
+        description="Add a new tenant restaurant to RestroCharge with custom branding, geo-fenced ordering, and subscription setup."
+        maxWidth="3xl"
+      >
+        <form onSubmit={handleCreateRestaurant} className="space-y-6 pt-2">
+          {/* SECTION 1: REQUIRED BASIC INFO */}
+          <div className="space-y-3">
+            <div className="flex items-center space-x-2 pb-1 border-b border-slate-200">
+              <Store className="h-4 w-4 text-brand-600" />
+              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                1. Required Information
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Restaurant Name <span className="text-rose-500">*</span>
+                </label>
+                <Input
+                  required
+                  placeholder="e.g. Royal Spice Bistro"
+                  value={formData.name}
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  className="text-xs"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-700">
+                    Restaurant Slug <span className="text-rose-500">*</span>
+                  </label>
+                  {slugStatus === "checking" && (
+                    <span className="text-[10px] text-slate-400 flex items-center">
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                      Checking...
+                    </span>
+                  )}
+                  {slugStatus === "available" && (
+                    <span className="text-[10px] text-emerald-600 font-bold flex items-center">
+                      <CheckCircle2 className="h-3 w-3 mr-0.5" />
+                      Available
+                    </span>
+                  )}
+                  {slugStatus === "taken" && (
+                    <span className="text-[10px] text-rose-600 font-bold flex items-center">
+                      <AlertTriangle className="h-3 w-3 mr-0.5" />
+                      Slug in use
+                    </span>
+                  )}
+                </div>
+                <Input
+                  required
+                  placeholder="e.g. royal-spice"
+                  value={formData.slug}
+                  onChange={(e) => handleSlugChange(e.target.value)}
+                  className={`text-xs font-mono ${
+                    slugStatus === "taken"
+                      ? "border-rose-400 focus:border-rose-500"
+                      : slugStatus === "available"
+                      ? "border-emerald-400 focus:border-emerald-500"
+                      : ""
+                  }`}
+                />
+                <span className="text-[10px] text-slate-400 block mt-0.5 truncate">
+                  URL: restrocharge.vivexatech.in/{formData.slug || "your-slug"}
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Restaurant Admin Email <span className="text-rose-500">*</span>
+                </label>
+                <Input
+                  type="email"
+                  required
+                  placeholder="owner@restaurant.com"
+                  value={formData.adminEmail}
+                  onChange={(e) => setFormData({ ...formData, adminEmail: e.target.value })}
+                  className="text-xs"
+                />
+                <span className="text-[10px] text-slate-400 block mt-0.5">
+                  Receives portal access and admin notifications.
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Primary Contact Phone <span className="text-rose-500">*</span>
+                </label>
+                <Input
+                  type="tel"
+                  required
+                  placeholder="+91 98765 43210"
+                  value={formData.contactNumber}
+                  onChange={(e) => setFormData({ ...formData, contactNumber: e.target.value })}
+                  className="text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Restaurant Status <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  className="w-full text-xs h-9 px-3 rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="ACTIVE">Active (Live)</option>
+                  <option value="PENDING">Pending Setup</option>
+                  <option value="SUSPENDED">Suspended</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Subscription Tier <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={formData.planId}
+                  onChange={(e) => setFormData({ ...formData, planId: e.target.value })}
+                  className="w-full text-xs h-9 px-3 rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="plan_starter">Starter Plan (₹1,499/mo)</option>
+                  <option value="plan_pro">Growth Plan (₹2,999/mo)</option>
+                  <option value="plan_enterprise">Enterprise Plan (₹5,999/mo)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 2: LOCATION & ORDERING GEO-FENCE */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+              <div className="flex items-center space-x-2">
+                <MapPin className="h-4 w-4 text-emerald-600" />
+                <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  2. Location & Geo-Fenced Ordering
+                </span>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (!navigator.geolocation) {
+                    toast.error("Geolocation not supported by browser.");
+                    return;
+                  }
+                  toast.info("Acquiring GPS coordinates...");
+                  navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        latitude: pos.coords.latitude.toFixed(6),
+                        longitude: pos.coords.longitude.toFixed(6),
+                      }));
+                      toast.success("Coordinates acquired from device GPS!");
+                    },
+                    (err) => toast.error(`GPS Error: ${err.message}`),
+                    { enableHighAccuracy: true }
+                  );
+                }}
+                className="h-7 text-[11px] text-slate-600"
+              >
+                <Navigation className="h-3 w-3 mr-1 text-emerald-600" />
+                Detect Device GPS
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">Latitude</label>
+                <Input
+                  type="text"
+                  placeholder="26.8524"
+                  value={formData.latitude}
+                  onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                  className="text-xs font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">Longitude</label>
+                <Input
+                  type="text"
+                  placeholder="75.8052"
+                  value={formData.longitude}
+                  onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                  className="text-xs font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">Ordering Radius (m)</label>
+                <Input
+                  type="number"
+                  min="10"
+                  max="50000"
+                  value={formData.orderingRadiusMetres}
+                  onChange={(e) => setFormData({ ...formData, orderingRadiusMetres: Number(e.target.value) })}
+                  className="text-xs font-semibold"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <input
+                type="checkbox"
+                id="addLocRestricted"
+                checked={formData.locationRestrictionEnabled}
+                onChange={(e) => setFormData({ ...formData, locationRestrictionEnabled: e.target.checked })}
+                className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              />
+              <label htmlFor="addLocRestricted" className="text-xs font-medium text-slate-700 cursor-pointer">
+                <strong>Enforce Location-Restricted QR Ordering:</strong> Customers can only order when physically seated within {formData.orderingRadiusMetres}m of these coordinates.
+              </label>
+            </div>
+          </div>
+
+          {/* SECTION 3: PROFILE, ADDRESS & BRANDING */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center space-x-2 pb-1 border-b border-slate-200">
+              <Globe className="h-4 w-4 text-purple-600" />
+              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                3. Profile, Address & Branding
+              </span>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-semibold text-slate-700 block mb-1">Description</label>
+              <textarea
+                rows={2}
+                placeholder="Brief narrative of the restaurant and cuisine specialty..."
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="w-full text-xs p-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="sm:col-span-2">
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">Full Street Address</label>
+                <Input
+                  placeholder="e.g. 102 M.I. Road, Near Panch Batti"
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  className="text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">City</label>
+                <Input
+                  placeholder="Jaipur"
+                  value={formData.city}
+                  onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                  className="text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">State</label>
+                <Input
+                  placeholder="Rajasthan"
+                  value={formData.state}
+                  onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                  className="text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">Postal Code</label>
+                <Input
+                  placeholder="302001"
+                  value={formData.postalCode}
+                  onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
+                  className="text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">Country</label>
+                <Input
+                  placeholder="India"
+                  value={formData.country}
+                  onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                  className="text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">Opening Hours</label>
+                <Input
+                  placeholder="11:00 AM - 11:00 PM"
+                  value={formData.openingHours}
+                  onChange={(e) => setFormData({ ...formData, openingHours: e.target.value })}
+                  className="text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Media Uploads */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                <span className="text-[11px] font-bold text-slate-700 block">Restaurant Logo</span>
+                <Input
+                  placeholder="Logo URL or upload file"
+                  value={formData.logoUrl}
+                  onChange={(e) => setFormData({ ...formData, logoUrl: e.target.value })}
+                  className="text-xs"
+                />
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], "logoUrl")}
+                  className="text-[11px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-slate-200 file:text-slate-700 hover:file:bg-slate-300"
+                />
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                <span className="text-[11px] font-bold text-slate-700 block">Cover / Hero Image</span>
+                <Input
+                  placeholder="Cover image URL or upload file"
+                  value={formData.coverImageUrl}
+                  onChange={(e) => setFormData({ ...formData, coverImageUrl: e.target.value })}
+                  className="text-xs"
+                />
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], "coverImageUrl")}
+                  className="text-[11px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-slate-200 file:text-slate-700 hover:file:bg-slate-300"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 4: SUBSCRIPTION, TRIAL & OPERATIONAL SETTINGS */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center space-x-2 pb-1 border-b border-slate-200">
+              <Calendar className="h-4 w-4 text-amber-600" />
+              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                4. Subscription & Operational Switches
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">Subscription Mode</label>
+                <select
+                  value={formData.subscriptionStatus}
+                  onChange={(e) => setFormData({ ...formData, subscriptionStatus: e.target.value })}
+                  className="w-full text-xs h-9 px-3 rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="ACTIVE">Regular Active (30-day initial billing)</option>
+                  <option value="TRIAL">Free Trial Period</option>
+                </select>
+              </div>
+
+              {formData.subscriptionStatus === "TRIAL" && (
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-700 block mb-1">Trial Duration (Days)</label>
+                  <select
+                    value={formData.trialDurationDays}
+                    onChange={(e) => setFormData({ ...formData, trialDurationDays: Number(e.target.value) })}
+                    className="w-full text-xs h-9 px-3 rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  >
+                    <option value="7">7 Days Trial</option>
+                    <option value="14">14 Days Trial (Standard)</option>
+                    <option value="30">30 Days Extended Trial</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <label className="flex items-center space-x-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.published}
+                  onChange={(e) => setFormData({ ...formData, published: e.target.checked })}
+                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                />
+                <span className="text-xs font-semibold text-slate-800">
+                  Enable Public Website ({formData.slug ? `/${formData.slug}` : "tenant site"})
+                </span>
+              </label>
+
+              <label className="flex items-center space-x-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.qrOrderingEnabled}
+                  onChange={(e) => setFormData({ ...formData, qrOrderingEnabled: e.target.checked })}
+                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                />
+                <span className="text-xs font-semibold text-slate-800">
+                  Accept Table QR Orders (Kitchen Queue Active)
+                </span>
+              </label>
+            </div>
+          </div>
+
+          {/* Form Actions */}
+          <div className="pt-4 border-t border-slate-200 flex flex-col-reverse sm:flex-row items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSubmittingRest}
+              onClick={() => setAddModalOpen(false)}
+              className="w-full sm:w-auto text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              isLoading={isSubmittingRest}
+              disabled={isSubmittingRest || slugStatus === "taken"}
+              className="w-full sm:w-auto text-xs font-semibold bg-brand-600 hover:bg-brand-700 text-white"
+            >
+              <Plus className="h-4 w-4 mr-1.5" />
+              Create Restaurant & Provision Tenant
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

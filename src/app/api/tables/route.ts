@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { dataStore } from "@/lib/services/data-store";
+import { firestoreService } from "@/lib/services/firestore-service";
 import { generateTableQRCode } from "@/lib/services/qr";
 import { generateId, slugify } from "@/lib/utils";
 import { TableItem } from "@/lib/types";
@@ -13,13 +14,31 @@ import { verifySuperAdminPermission } from "@/lib/auth/server-auth";
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const restaurantId = searchParams.get("restaurantId");
+    let restaurantId = searchParams.get("restaurantId");
 
-    if (!restaurantId) {
-      return NextResponse.json({ error: "restaurantId is required." }, { status: 400 });
+    if (!restaurantId || !restaurantId.trim()) {
+      const all = dataStore.getRestaurants();
+      if (all.length > 0) {
+        restaurantId = all[0].id;
+      }
     }
 
-    const tables = dataStore.getTables(restaurantId);
+    if (!restaurantId) {
+      return NextResponse.json({ tables: [] });
+    }
+
+    let tables = dataStore.getTables(restaurantId);
+    if (tables.length === 0) {
+      try {
+        const fromDb = await firestoreService.getTables(restaurantId);
+        if (fromDb && fromDb.length > 0) {
+          fromDb.forEach((t) => dataStore.saveTable(t));
+          tables = fromDb;
+        }
+      } catch (dbErr: any) {
+        console.warn("[Tables API] Firestore getTables error:", dbErr.message);
+      }
+    }
     return NextResponse.json({ tables });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

@@ -13,12 +13,12 @@ export default function SuperAdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <RoleGuard allowedRoles={["SUPER_ADMIN", "SALES_MANAGER", "ONBOARDING_EXECUTIVE"]} portalName="Vivexa Super Admin Panel">
-      <div className="flex min-h-screen bg-slate-50 text-slate-900 font-sans">
+    <RoleGuard allowedRoles={["SUPER_ADMIN", "SALES_MANAGER", "ONBOARDING_EXECUTIVE", "SUPPORT_EXECUTIVE"]} portalName="Vivexa Super Admin Panel">
+      <div className="flex flex-col lg:flex-row min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-hidden">
         <SuperAdminNav />
-        <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto w-full max-w-full">
           {children}
-        </div>
+        </main>
       </div>
     </RoleGuard>
   );

@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { dataStore } from "@/lib/services/data-store";
+import { firestoreService } from "@/lib/services/firestore-service";
 import { generateId } from "@/lib/utils";
 import { ProductItem } from "@/lib/types";
 import { verifyRestaurantAccess } from "@/lib/auth/server-auth";
@@ -11,11 +12,31 @@ import { verifyRestaurantAccess } from "@/lib/auth/server-auth";
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const restaurantId = searchParams.get("restaurantId");
-    if (!restaurantId) {
-      return NextResponse.json({ error: "restaurantId is required." }, { status: 400 });
+    let restaurantId = searchParams.get("restaurantId");
+    if (!restaurantId || !restaurantId.trim()) {
+      const auth = await verifyRestaurantAccess(req, "").catch(() => null);
+      if (auth?.user?.restaurantId) {
+        restaurantId = auth.user.restaurantId;
+      } else if (auth?.user?.isSuperAdmin) {
+        const all = dataStore.getRestaurants();
+        restaurantId = all[0]?.id;
+      }
     }
-    const products = dataStore.getProducts(restaurantId);
+    if (!restaurantId) {
+      return NextResponse.json({ products: [] });
+    }
+    let products = dataStore.getProducts(restaurantId);
+    if (products.length === 0) {
+      try {
+        const fromDb = await firestoreService.getProducts(restaurantId);
+        if (fromDb && fromDb.length > 0) {
+          fromDb.forEach((p) => dataStore.saveProduct(p));
+          products = fromDb;
+        }
+      } catch (dbErr: any) {
+        console.warn("[Products API] Firestore getProducts error:", dbErr.message);
+      }
+    }
     return NextResponse.json({ products });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -25,7 +46,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const {
+    let {
       restaurantId,
       categoryId,
       name,
@@ -39,6 +60,16 @@ export async function POST(req: NextRequest) {
       imageUrl,
       sortOrder = 0,
     } = body;
+
+    if (!restaurantId || !restaurantId.trim()) {
+      const auth = await verifyRestaurantAccess(req, "").catch(() => null);
+      if (auth?.user?.restaurantId) {
+        restaurantId = auth.user.restaurantId;
+      } else if (auth?.user?.isSuperAdmin) {
+        const all = dataStore.getRestaurants();
+        restaurantId = all[0]?.id;
+      }
+    }
 
     if (!restaurantId || !categoryId || !name || price === undefined) {
       return NextResponse.json({ error: "Missing required product fields." }, { status: 400 });

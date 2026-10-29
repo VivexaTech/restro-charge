@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { PublicNavbar } from "@/components/public/navbar";
 import { PublicFooter } from "@/components/public/footer";
@@ -8,12 +8,24 @@ import { dataStore } from "@/lib/services/data-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MapPin, Search, ExternalLink, Utensils } from "lucide-react";
+import { RestaurantProfile } from "@/lib/types";
 
 export default function RestaurantDirectoryPage() {
   const [searchTerm, setSearchTerm] = useState("");
-  const publishedRestaurants = dataStore.getPublishedRestaurants();
+  const [restaurants, setRestaurants] = useState<RestaurantProfile[]>(dataStore.getPublishedRestaurants());
 
-  const filtered = publishedRestaurants.filter(
+  useEffect(() => {
+    fetch("/api/restaurants?published=true")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.restaurants && data.restaurants.length > 0) {
+          setRestaurants(data.restaurants);
+        }
+      })
+      .catch((err) => console.warn("Directory fetch error:", err));
+  }, []);
+
+  const filtered = restaurants.filter(
     (r) =>
       r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       r.cuisineType.toLowerCase().includes(searchTerm.toLowerCase()) ||

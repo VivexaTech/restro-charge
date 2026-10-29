@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { dataStore } from "@/lib/services/data-store";
+import { firestoreService } from "@/lib/services/firestore-service";
 import { verifySuperAdminPermission } from "@/lib/auth/server-auth";
 
 export async function GET(
@@ -12,7 +13,16 @@ export async function GET(
 ) {
   try {
     const { id } = params;
-    const restaurant = dataStore.getRestaurantById(id);
+    let restaurant = dataStore.getRestaurantById(id);
+
+    // If not in local dataStore cache, query Cloud Firestore authoritatively
+    if (!restaurant) {
+      restaurant = await firestoreService.getRestaurantById(id);
+      if (restaurant) {
+        dataStore.saveRestaurantLocally(restaurant);
+      }
+    }
+
     if (!restaurant) {
       return NextResponse.json({ error: "Restaurant not found." }, { status: 404 });
     }
@@ -30,7 +40,11 @@ export async function PATCH(
     const { id } = params;
     const body = await req.json();
 
-    const existing = dataStore.getRestaurantById(id);
+    let existing = dataStore.getRestaurantById(id);
+    if (!existing) {
+      existing = await firestoreService.getRestaurantById(id);
+    }
+
     if (!existing) {
       return NextResponse.json({ error: "Restaurant not found." }, { status: 404 });
     }

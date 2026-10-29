@@ -132,9 +132,11 @@ export interface RestaurantLocationSettings {
   latitude: number | null;
   longitude: number | null;
   orderingRadiusMetres: number;
+  customerSessionRadiusMeters?: number; // Configurable dining session radius (default 300m)
   locationRestrictionEnabled: boolean;
   isConfigured: boolean;
   addressSnapshot?: string;
+  timezone?: string; // Venue timezone e.g. "Asia/Kolkata"
   updatedAt?: string;
   updatedBy?: string;
   updatedByName?: string;
@@ -166,6 +168,9 @@ export interface RestaurantProfile {
   websiteConfig: RestaurantWebsiteConfig;
   billingConfig: BillingConfig;
   subscription: SubscriptionInfo;
+  adminProvisioningStatus?: 'PROVISIONED' | 'PENDING' | 'FAILED';
+  adminProvisioningError?: string;
+  adminProvisionedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -228,16 +233,79 @@ export type OrderStatus =
   | 'SERVED'
   | 'CANCELLED';
 
+export type OfferType = 'DAY_WISE' | 'CATEGORY' | 'EVENT' | 'COMBO';
+
+export type DiscountMethod = 'FIXED_PRICE' | 'PERCENTAGE' | 'FIXED_AMOUNT';
+
+export type OfferStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'EXPIRED';
+
+export type DayOfWeek =
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday'
+  | 'saturday'
+  | 'sunday';
+
+export interface ComboItemConfig {
+  productId: string;
+  quantity: number;
+  portionId?: string;
+}
+
+export interface ComboItemSnapshot {
+  productId: string;
+  productName: string;
+  quantity: number;
+  portionId?: string;
+  portionName?: string;
+}
+
+export interface RestaurantOffer {
+  id: string;
+  restaurantId: string;
+  name: string;
+  description?: string;
+  offerType: OfferType;
+  discountMethod: DiscountMethod;
+  discountValue: number; // E.g., 99 for fixed ₹99, 25 for 25%, or 30 for ₹30 off
+  eligibleItemIds: string[]; // Specific product IDs
+  eligibleCategoryIds: string[]; // Specific category IDs
+  comboItems?: ComboItemConfig[]; // Populated when offerType === 'COMBO'
+  comboPrice?: number; // Price of the entire combo
+  applicableDays?: DayOfWeek[]; // E.g., ['tuesday']
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string; // YYYY-MM-DD
+  startTime?: string; // HH:mm (24-hour)
+  endTime?: string; // HH:mm (24-hour)
+  timezone?: string; // e.g. 'Asia/Kolkata'
+  priority: number; // 1 to 100, higher number = higher priority
+  status: OfferStatus;
+  dineInOnly?: boolean; // When true, restricted strictly to verified dine-in sessions with valid table code
+  imageUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface OrderItemSnapshot {
   productId: string;
   name: string;
-  price: number; // Selected portion unit price
+  price: number; // Effective unit price charged
+  regularPrice?: number; // Base regular price before discount
+  discountAmount?: number; // Per-unit discount (regularPrice - price)
+  appliedOfferId?: string;
+  appliedOfferName?: string;
+  appliedOfferType?: OfferType;
+  isCombo?: boolean;
+  comboItemsSnapshot?: ComboItemSnapshot[];
   quantity: number;
   isVeg: boolean;
   dietaryType?: DietaryClassification;
   portionId?: string; // e.g. 'quarter', 'half', 'full'
   portionName?: string; // e.g. 'Quarter', 'Half', 'Full'
   categoryName?: string;
+  lineTotal?: number;
 }
 
 export interface OrderBillingBreakdown {
@@ -260,6 +328,8 @@ export interface OrderItem {
   restaurantSlug: string;
   tableId: string;
   tableLabel: string;
+  diningSessionId?: string; // Connected active customer dining visit
+  idempotencyKey?: string; // Client idempotency protection
   items: OrderItemSnapshot[];
   billing: OrderBillingBreakdown;
   status: OrderStatus;
@@ -270,6 +340,57 @@ export interface OrderItem {
     note?: string;
   }[];
   customerNotes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RestaurantMembership {
+  id: string;
+  restaurantId: string;
+  restaurantSlug: string;
+  restaurantName: string;
+  uid: string;
+  userId?: string;
+  email: string;
+  userEmail?: string;
+  displayName?: string;
+  role: 'RESTAURANT_OWNER' | 'RESTAURANT_MANAGER' | 'KITCHEN_STAFF' | 'ORDER_STAFF';
+  status: 'ACTIVE' | 'DISABLED';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DiningSessionOrderSummary {
+  orderId: string;
+  orderNumber: string;
+  placedAt: string;
+  itemCount: number;
+  subtotal: number;
+  status: OrderStatus;
+}
+
+export interface DiningSession {
+  id: string; // e.g. "dsess_..."
+  restaurantId: string;
+  restaurantSlug: string;
+  tableId: string;
+  tableCode: string;
+  sessionToken: string; // Unguessable token delivered to client
+  sessionTokenHash: string; // SHA-256 hash stored on server
+  status: 'ACTIVE' | 'CLOSED';
+  startedAt: string;
+  lastActivityAt: string;
+  lastVerifiedLocationAt?: string;
+  lastVerifiedLatitude?: number | null;
+  lastVerifiedLongitude?: number | null;
+  lastVerifiedDistanceMetres?: number | null;
+  departureCheckCount?: number;
+  orderIds: string[];
+  items: OrderItemSnapshot[];
+  billing: OrderBillingBreakdown; // Authoritative combined bill
+  ordersSummary: DiningSessionOrderSummary[];
+  closedAt?: string;
+  closedReason?: 'DEPARTURE_RADIUS_EXCEEDED' | 'MANUAL_STAFF_CLOSE' | 'SESSION_TIMEOUT';
   createdAt: string;
   updatedAt: string;
 }

@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { dataStore } from "@/lib/services/data-store";
+import { firestoreService } from "@/lib/services/firestore-service";
 import { generateId } from "@/lib/utils";
 import { ProductCategory } from "@/lib/types";
 import { verifyRestaurantAccess } from "@/lib/auth/server-auth";
@@ -11,11 +12,31 @@ import { verifyRestaurantAccess } from "@/lib/auth/server-auth";
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const restaurantId = searchParams.get("restaurantId");
-    if (!restaurantId) {
-      return NextResponse.json({ error: "restaurantId is required." }, { status: 400 });
+    let restaurantId = searchParams.get("restaurantId");
+    if (!restaurantId || !restaurantId.trim()) {
+      const auth = await verifyRestaurantAccess(req, "").catch(() => null);
+      if (auth?.user?.restaurantId) {
+        restaurantId = auth.user.restaurantId;
+      } else if (auth?.user?.isSuperAdmin) {
+        const all = dataStore.getRestaurants();
+        restaurantId = all[0]?.id;
+      }
     }
-    const categories = dataStore.getCategories(restaurantId);
+    if (!restaurantId) {
+      return NextResponse.json({ categories: [] });
+    }
+    let categories = dataStore.getCategories(restaurantId);
+    if (categories.length === 0) {
+      try {
+        const fromDb = await firestoreService.getCategories(restaurantId);
+        if (fromDb && fromDb.length > 0) {
+          fromDb.forEach((c) => dataStore.saveCategory(c));
+          categories = fromDb;
+        }
+      } catch (dbErr: any) {
+        console.warn("[Categories API] Firestore getCategories error:", dbErr.message);
+      }
+    }
     return NextResponse.json({ categories });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -25,7 +46,17 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { restaurantId, name, description, sortOrder = 0 } = body;
+    let { restaurantId, name, description, sortOrder = 0 } = body;
+
+    if (!restaurantId || !restaurantId.trim()) {
+      const auth = await verifyRestaurantAccess(req, "").catch(() => null);
+      if (auth?.user?.restaurantId) {
+        restaurantId = auth.user.restaurantId;
+      } else if (auth?.user?.isSuperAdmin) {
+        const all = dataStore.getRestaurants();
+        restaurantId = all[0]?.id;
+      }
+    }
 
     if (!restaurantId || !name) {
       return NextResponse.json({ error: "Missing required category fields." }, { status: 400 });

@@ -23,8 +23,8 @@ interface AuthContextType {
   role: UserRole;
   restaurantId: string | null;
   isLoading: boolean;
-  loginWithEmail: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
-  loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+  loginWithEmail: (email: string, pass: string) => Promise<{ success: boolean; error?: string; role?: UserRole }>;
+  loginWithGoogle: () => Promise<{ success: boolean; error?: string; role?: UserRole }>;
   logout: () => Promise<void>;
   switchUserRole: (role: UserRole, restaurantId?: string) => void;
   getIdToken: () => Promise<string | null>;
@@ -48,6 +48,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const resolveUserSession = async (fbUser: any): Promise<UserProfile> => {
+    let role: UserRole = "CUSTOMER_GUEST";
+    let restaurantId: string | null = null;
+
+    try {
+      const token = await fbUser.getIdToken();
+      const res = await fetch("/api/auth/resolve-membership", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        role = (data.role as UserRole) || "CUSTOMER_GUEST";
+        restaurantId = data.restaurantId || null;
+        if (data.requiresTokenRefresh) {
+          await fbUser.getIdToken(true);
+        }
+      } else {
+        const tokenResult = await fbUser.getIdTokenResult();
+        const isSuper =
+          tokenResult.claims.role === "SUPER_ADMIN" ||
+          tokenResult.claims.superAdmin === true ||
+          (fbUser.uid === SUPER_ADMIN_UID && fbUser.email === "admin@vivexatech.in");
+
+        role = isSuper
+          ? "SUPER_ADMIN"
+          : (tokenResult.claims.role as UserRole) || "CUSTOMER_GUEST";
+        restaurantId = (tokenResult.claims.restaurantId as string) || null;
+      }
+    } catch (e) {
+      console.warn("[Auth] Membership resolution failed, falling back to claims:", e);
+      try {
+        const tokenResult = await fbUser.getIdTokenResult();
+        const isSuper =
+          tokenResult.claims.role === "SUPER_ADMIN" ||
+          tokenResult.claims.superAdmin === true ||
+          (fbUser.uid === SUPER_ADMIN_UID && fbUser.email === "admin@vivexatech.in");
+
+        role = isSuper
+          ? "SUPER_ADMIN"
+          : (tokenResult.claims.role as UserRole) || "CUSTOMER_GUEST";
+        restaurantId = (tokenResult.claims.restaurantId as string) || null;
+      } catch {
+        role = "CUSTOMER_GUEST";
+        restaurantId = null;
+      }
+    }
+
+    const profile: UserProfile = {
+      uid: fbUser.uid,
+      email: fbUser.email || "user@restrocharge.in",
+      displayName: fbUser.displayName || fbUser.email?.split("@")[0] || "User",
+      role,
+      restaurantId: restaurantId || undefined,
+      createdAt: fbUser.metadata?.creationTime || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isActive: true,
+    };
+
+    return profile;
+  };
+
   useEffect(() => {
     // 1. Listen for real Firebase Authentication state changes
     let isMounted = true;
@@ -57,50 +123,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (fbUser) {
         try {
-          const tokenResult = await fbUser.getIdTokenResult();
-          const isSuper =
-            fbUser.uid === SUPER_ADMIN_UID ||
-            tokenResult.claims.role === "SUPER_ADMIN" ||
-            tokenResult.claims.superAdmin === true ||
-            Boolean(fbUser.email?.endsWith("@vivexatech.in"));
-
-          const role: UserRole = isSuper
-            ? "SUPER_ADMIN"
-            : (tokenResult.claims.role as UserRole) || "RESTAURANT_OWNER";
-
-          const profile: UserProfile = {
-            uid: fbUser.uid,
-            email: fbUser.email || "user@restrocharge.in",
-            displayName: fbUser.displayName || fbUser.email?.split("@")[0] || "User",
-            role,
-            restaurantId: (tokenResult.claims.restaurantId as string) || "rest_vivexa_01",
-            createdAt: fbUser.metadata.creationTime || new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            isActive: true,
-          };
-
-          setUser(profile);
-          localStorage.setItem("restrocharge_session_user", JSON.stringify(profile));
+          const profile = await resolveUserSession(fbUser);
+          if (isMounted) {
+            setUser(profile);
+            localStorage.setItem("restrocharge_session_user", JSON.stringify(profile));
+          }
         } catch (err) {
           console.warn("[Auth] Token parsing error:", err);
+          if (isMounted) {
+            setUser(null);
+            localStorage.removeItem("restrocharge_session_user");
+          }
         }
       } else {
-        // Fallback to stored session in local storage for development/persona switcher
-        try {
-          const savedUser =
-            localStorage.getItem("restrocharge_session_user") ||
-            localStorage.getItem("restohub_session_user");
-          if (savedUser) {
-            setUser(JSON.parse(savedUser));
-          } else {
-            // Default to Vivexa Tech Super Admin for seamless testing if no session
-            setUser(SEED_USERS[0]);
-          }
-        } catch {
-          setUser(SEED_USERS[0]);
+        // When not authenticated with Firebase Auth, clear session
+        if (isMounted) {
+          setUser(null);
+          localStorage.removeItem("restrocharge_session_user");
+          localStorage.removeItem("restohub_session_user");
         }
       }
-      setIsLoading(false);
+      if (isMounted) setIsLoading(false);
     });
 
     return () => {
@@ -109,112 +152,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const loginWithEmail = async (email: string, pass?: string): Promise<{ success: boolean; error?: string }> => {
+  const loginWithEmail = async (email: string, pass?: string): Promise<{ success: boolean; error?: string; role?: UserRole }> => {
     setIsLoading(true);
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanEmail) {
+      setIsLoading(false);
+      return { success: false, error: "Please enter your email address." };
+    }
+
+    if (!pass || pass.length < 6) {
+      setIsLoading(false);
+      return { success: false, error: "Password must be at least 6 characters long." };
+    }
+
     try {
-      // 1. If password provided, attempt real Firebase Authentication
-      if (pass && pass.length >= 6) {
-        try {
-          const userCredential = await signInWithEmailAndPassword(auth, email, pass);
-          const fbUser = userCredential.user;
-          const isSuper = fbUser.uid === SUPER_ADMIN_UID || Boolean(email.endsWith("@vivexatech.in"));
-          const role: UserRole = isSuper ? "SUPER_ADMIN" : "RESTAURANT_OWNER";
+      // 1. Attempt real Firebase Authentication
+      const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, pass);
+      const fbUser = userCredential.user;
+      const profile = await resolveUserSession(fbUser);
 
-          const profile: UserProfile = {
-            uid: fbUser.uid,
-            email: fbUser.email || email,
-            displayName: fbUser.displayName || email.split("@")[0],
-            role,
-            restaurantId: "rest_vivexa_01",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            isActive: true,
-          };
-          setUser(profile);
-          localStorage.setItem("restrocharge_session_user", JSON.stringify(profile));
-          setIsLoading(false);
-          return { success: true };
-        } catch (fbErr: any) {
-          if (fbErr.code === "auth/wrong-password") {
-            setIsLoading(false);
-            return { success: false, error: "Incorrect password. Please try again." };
-          }
-        }
-      }
-
-      // 2. Find matching seed user or create restaurant owner profile
-      const found = SEED_USERS.find((u) => u.email.toLowerCase() === email.toLowerCase());
-      if (found) {
-        setUser(found);
-        localStorage.setItem("restrocharge_session_user", JSON.stringify(found));
-        setIsLoading(false);
-        return { success: true };
-      }
-
-      // 3. If logging in with Vivexa email domain
-      if (email.endsWith("@vivexatech.in")) {
-        const adminProfile: UserProfile = {
-          uid: SUPER_ADMIN_UID,
-          email,
-          displayName: email.split("@")[0],
-          role: "SUPER_ADMIN",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          isActive: true,
-        };
-        setUser(adminProfile);
-        localStorage.setItem("restrocharge_session_user", JSON.stringify(adminProfile));
-        setIsLoading(false);
-        return { success: true };
-      }
-
-      // 4. Default restaurant owner account for any other email
-      const newOwner: UserProfile = {
-        uid: `usr_${Date.now()}`,
-        email,
-        displayName: email.split("@")[0],
-        role: "RESTAURANT_OWNER",
-        restaurantId: "rest_vivexa_01",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        isActive: true,
-      };
-      setUser(newOwner);
-      localStorage.setItem("restrocharge_session_user", JSON.stringify(newOwner));
+      setUser(profile);
+      localStorage.setItem("restrocharge_session_user", JSON.stringify(profile));
       setIsLoading(false);
-      return { success: true };
-    } catch (err: any) {
+      return { success: true, role: profile.role };
+    } catch (fbErr: any) {
       setIsLoading(false);
-      return { success: false, error: err.message || "Login failed" };
+      console.warn("[Auth] Firebase sign-in error:", fbErr.code, fbErr.message);
+
+      // Friendly actionable error messages
+      switch (fbErr.code) {
+        case "auth/user-not-found":
+          return { success: false, error: "No account found with this email address. Please contact your administrator." };
+        case "auth/wrong-password":
+          return { success: false, error: "Incorrect password. Please verify and try again." };
+        case "auth/invalid-credential":
+          return { success: false, error: "Invalid credentials. Please verify your email and password." };
+        case "auth/too-many-requests":
+          return { success: false, error: "Access temporarily disabled due to multiple failed login attempts. Please reset your password or try again later." };
+        case "auth/user-disabled":
+          return { success: false, error: "This account has been disabled. Please contact Vivexa Tech support." };
+        case "auth/network-request-failed":
+          return { success: false, error: "Network connection error. Please check your internet connection." };
+        default:
+          return { success: false, error: fbErr.message || "Authentication failed. Please verify your credentials." };
+      }
     }
   };
 
-  const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
+  const loginWithGoogle = async (): Promise<{ success: boolean; error?: string; role?: UserRole }> => {
     setIsLoading(true);
     try {
       const cred = await signInWithPopup(auth, googleProvider);
       const fbUser = cred.user;
-      const isSuper = fbUser.uid === SUPER_ADMIN_UID || Boolean(fbUser.email?.endsWith("@vivexatech.in"));
-      const role: UserRole = isSuper ? "SUPER_ADMIN" : "RESTAURANT_OWNER";
+      const profile = await resolveUserSession(fbUser);
 
-      const profile: UserProfile = {
-        uid: fbUser.uid,
-        email: fbUser.email || "admin@vivexatech.in",
-        displayName: fbUser.displayName || "Google User",
-        role,
-        restaurantId: "rest_vivexa_01",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        isActive: true,
-      };
       setUser(profile);
       localStorage.setItem("restrocharge_session_user", JSON.stringify(profile));
       setIsLoading(false);
-      return { success: true };
+      return { success: true, role: profile.role };
     } catch (err: any) {
+      setIsLoading(false);
       console.warn("[Auth] Google Sign-in popup cancelled or error:", err.message);
-      // Dev fallback if popup blocked
-      return loginWithEmail("admin@vivexatech.in", "");
+      return { success: false, error: err.message || "Google sign-in was cancelled or failed." };
     }
   };
 
@@ -249,13 +249,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const switchUserRole = (role: UserRole, restaurantId?: string) => {
-    const isSuper = role === "SUPER_ADMIN";
+    // In production, arbitrary client role switching is strictly forbidden
+    if (process.env.NODE_ENV === "production") {
+      console.warn("[Auth] Client-side role switching is forbidden in production.");
+      return;
+    }
+    const isSuper = role === "SUPER_ADMIN" && (user?.email === "admin@vivexatech.in" || user?.uid === SUPER_ADMIN_UID);
     const updated: UserProfile = {
       uid: isSuper ? SUPER_ADMIN_UID : (user?.uid || `usr_${Date.now()}`),
       email: isSuper ? "admin@vivexatech.in" : (user?.email || "user@restrocharge.in"),
       displayName: role.replace("_", " "),
-      role,
-      restaurantId: restaurantId || user?.restaurantId || "rest_vivexa_01",
+      role: role === "SUPER_ADMIN" && !isSuper ? "CUSTOMER_GUEST" : role,
+      restaurantId: restaurantId || user?.restaurantId || undefined,
       createdAt: user?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       isActive: true,

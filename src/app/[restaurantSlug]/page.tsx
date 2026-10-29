@@ -14,8 +14,10 @@ import {
   Award,
 } from "lucide-react";
 import { dataStore } from "@/lib/services/data-store";
+import { firestoreService } from "@/lib/services/firestore-service";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { resolveBestOfferForItem } from "@/lib/services/offers-engine";
 
 interface Props {
   params: {
@@ -42,7 +44,11 @@ export async function generateMetadata({ params }: Props) {
   const { restaurantSlug } = params;
   if (RESERVED_SLUGS.includes(restaurantSlug.toLowerCase())) return {};
 
-  const restaurant = dataStore.getRestaurantBySlug(restaurantSlug);
+  let restaurant = dataStore.getRestaurantBySlug(restaurantSlug);
+  if (!restaurant) {
+    restaurant = await firestoreService.getRestaurantBySlug(restaurantSlug);
+    if (restaurant) dataStore.saveRestaurantLocally(restaurant);
+  }
   if (!restaurant) return { title: "Restaurant Not Found | RestroCharge" };
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://restrocharge.vivexatech.in";
@@ -72,15 +78,34 @@ export async function generateMetadata({ params }: Props) {
   };
 }
 
-export default function RestaurantHomePage({ params }: Props) {
+export default async function RestaurantHomePage({ params }: Props) {
   const { restaurantSlug } = params;
   if (RESERVED_SLUGS.includes(restaurantSlug.toLowerCase())) notFound();
 
-  const restaurant = dataStore.getRestaurantBySlug(restaurantSlug);
+  let restaurant = dataStore.getRestaurantBySlug(restaurantSlug);
+  if (!restaurant) {
+    restaurant = await firestoreService.getRestaurantBySlug(restaurantSlug);
+    if (restaurant) dataStore.saveRestaurantLocally(restaurant);
+  }
   if (!restaurant) notFound();
 
-  const categories = dataStore.getCategories(restaurant.id);
-  const products = dataStore.getProducts(restaurant.id);
+  let categories = dataStore.getCategories(restaurant.id);
+  if (categories.length === 0) {
+    categories = await firestoreService.getCategories(restaurant.id);
+    categories.forEach((c) => dataStore.saveCategory(c));
+  }
+
+  let products = dataStore.getProducts(restaurant.id);
+  if (products.length === 0) {
+    products = await firestoreService.getProducts(restaurant.id);
+    products.forEach((p) => dataStore.saveProduct(p));
+  }
+
+  let offers = dataStore.getOffers(restaurant.id);
+  if (offers.length === 0) {
+    offers = await firestoreService.getOffers(restaurant.id);
+    offers.forEach((o) => dataStore.saveOfferLocally(o));
+  }
   const branding = restaurant.branding;
   const config = restaurant.websiteConfig;
   const primaryColor = branding?.primaryColor || "#ea580c";
@@ -291,9 +316,26 @@ export default function RestaurantHomePage({ params }: Props) {
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-sm font-bold text-slate-900 font-display">
-                    {formatCurrency(prod.price)}
-                  </span>
+                  {(() => {
+                    const offerEval = resolveBestOfferForItem(prod, undefined, offers);
+                    if (offerEval.hasOffer) {
+                      return (
+                        <div className="flex items-baseline space-x-1.5">
+                          <span className="text-xs line-through text-slate-400 font-medium">
+                            {formatCurrency(prod.price)}
+                          </span>
+                          <span className="text-sm font-bold text-brand-700 font-display">
+                            {formatCurrency(offerEval.effectivePrice)}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <span className="text-sm font-bold text-slate-900 font-display">
+                        {formatCurrency(prod.price)}
+                      </span>
+                    );
+                  })()}
                   <Link
                     href={`/${restaurant.slug}/menu`}
                     className="text-xs font-semibold text-brand-600 hover:text-brand-700"

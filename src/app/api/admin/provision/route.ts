@@ -11,7 +11,9 @@ import { dataStore } from "@/lib/services/data-store";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
+    const targetEmail = body.email || "admin@vivexatech.in";
     const targetUid = body.targetUid || SUPER_ADMIN_UID;
+    const initialPassword = body.password;
 
     // Check Firebase Admin SDK readiness
     if (!isFirebaseAdminReady()) {
@@ -27,22 +29,45 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. Verify user exists in Firebase Authentication
+    // 1. Verify or create user in Firebase Authentication
     try {
-      const user = await adminAuth.getUser(targetUid);
+      let user;
+      try {
+        user = await adminAuth.getUserByEmail(targetEmail);
+      } catch (emailErr: any) {
+        if (emailErr.code === "auth/user-not-found") {
+          try {
+            user = await adminAuth.getUser(targetUid);
+          } catch (uidErr: any) {
+            if (uidErr.code === "auth/user-not-found" && body.createIfMissing && initialPassword) {
+              user = await adminAuth.createUser({
+                uid: targetUid,
+                email: targetEmail,
+                displayName: "Vivexa Tech Super Admin",
+                emailVerified: true,
+                password: initialPassword,
+              });
+            } else {
+              throw uidErr;
+            }
+          }
+        } else {
+          throw emailErr;
+        }
+      }
 
       // 2. Set Firebase Custom Claims for Super Admin
-      await adminAuth.setCustomUserClaims(targetUid, {
+      await adminAuth.setCustomUserClaims(user.uid, {
         role: "SUPER_ADMIN",
         superAdmin: true,
       });
 
       // 3. Update Firestore user document
       try {
-        await adminDb.collection("users").doc(targetUid).set(
+        await adminDb.collection("users").doc(user.uid).set(
           {
-            uid: targetUid,
-            email: user.email || "admin@vivexatech.in",
+            uid: user.uid,
+            email: user.email || targetEmail,
             displayName: user.displayName || "Vivexa Tech Super Admin",
             role: "SUPER_ADMIN",
             isSuperAdmin: true,
@@ -59,14 +84,14 @@ export async function POST(req: NextRequest) {
       dataStore.addAuditLog({
         action: "PROVISION_SUPER_ADMIN",
         targetType: "USER",
-        targetId: targetUid,
+        targetId: user.uid,
         performedBy: {
           uid: "system",
           email: "system@vivexatech.in",
           name: "Provisioning Service",
         },
         details: {
-          targetUid,
+          targetUid: user.uid,
           email: user.email,
           claims: { role: "SUPER_ADMIN", superAdmin: true },
         },
@@ -74,7 +99,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        message: `Super Admin role securely provisioned for UID: ${targetUid}`,
+        message: `Super Admin role securely provisioned for ${user.email} (UID: ${user.uid})`,
         user: {
           uid: user.uid,
           email: user.email,
@@ -88,7 +113,7 @@ export async function POST(req: NextRequest) {
           {
             success: false,
             error: "USER_NOT_FOUND",
-            message: `User with UID '${targetUid}' was not found in Firebase Authentication. Required action: The user must first register or be created in the Firebase console with this exact UID.`,
+            message: `User '${targetEmail}' was not found in Firebase Authentication. Pass createIfMissing: true with password, or run scripts/provision-super-admin.ts`,
             targetUid,
           },
           { status: 404 }
