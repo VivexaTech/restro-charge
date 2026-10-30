@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/context/auth-context";
 import { authFetch } from "@/lib/auth/client-auth";
 import { useActiveRestaurant } from "@/lib/hooks/use-active-restaurant";
+import { StaffSoundPreferenceCard } from "@/components/staff/sound-preference-card";
 
 export default function RestaurantStaffManagementPage() {
   const { user } = useAuth();
@@ -332,6 +333,9 @@ export default function RestaurantStaffManagementPage() {
           </div>
         )}
       </div>
+
+      {/* Staff Order Notification Sound Setting (Requirement B) */}
+      <StaffSoundPreferenceCard />
 
       {/* Add Staff Modal */}
       <Modal

@@ -19,6 +19,7 @@ import {
   getZonedDateInfo,
   validateOfferEligibility,
 } from "@/lib/services/offers-engine";
+import { sendOrderPushNotification } from "@/lib/services/push-notification-service";
 
 export async function POST(req: NextRequest) {
   try {
@@ -416,6 +417,11 @@ export async function POST(req: NextRequest) {
 
     // 9. Save order & notify staff in real-time
     dataStore.saveOrder(order);
+
+    // 9b. Dispatch browser push notification to authorized restaurant staff
+    sendOrderPushNotification(order, restaurant).catch((pushErr) => {
+      console.warn("[Orders API] Push notification dispatch warning:", pushErr.message);
+    });
 
     // 10. Atomically append order to Dining Session and update combined bill
     const updatedSession = await diningSessionService.appendOrderToSession({

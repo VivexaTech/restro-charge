@@ -1,5 +1,11 @@
 "use client";
 
+// ==============================================================================
+// RESTROCHARGE - Kitchen Order Display (KDS)
+// Live station stream for chefs and kitchen preparation teams.
+// Real-time Firestore synchronization of ticket statuses.
+// ==============================================================================
+
 import React, { useState, useEffect } from "react";
 import {
   ChefHat,
@@ -16,6 +22,7 @@ import { useAuth } from "@/context/auth-context";
 import { timeAgo } from "@/lib/utils";
 import { toast } from "sonner";
 import { authFetch } from "@/lib/auth/client-auth";
+import { firestoreService } from "@/lib/services/firestore-service";
 
 export default function KitchenDisplaySystemPage() {
   const { user } = useAuth();
@@ -24,33 +31,48 @@ export default function KitchenDisplaySystemPage() {
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchKitchenOrders = async () => {
+  useEffect(() => {
     if (!currentRestaurantId) {
       setOrders([]);
       setLoading(false);
       return;
     }
-    try {
-      const res = await authFetch(`/api/orders?restaurantId=${currentRestaurantId}`);
-      const data = await res.json();
-      const list: OrderItem[] = data.orders || [];
-      // KDS focuses on active kitchen tickets: NEW, ACCEPTED, PREPARING
-      const kitchenList = list.filter(
-        (o) => o.status === "NEW" || o.status === "ACCEPTED" || o.status === "PREPARING"
-      );
-      setOrders(kitchenList);
-    } catch {
-      console.error("KDS fetch error");
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  useEffect(() => {
+    const fetchKitchenOrders = async () => {
+      try {
+        const res = await authFetch(`/api/orders?restaurantId=${currentRestaurantId}`);
+        const data = await res.json();
+        const list: OrderItem[] = data.orders || [];
+        const kitchenList = list.filter(
+          (o) => o.status === "NEW" || o.status === "ACCEPTED" || o.status === "PREPARING"
+        );
+        setOrders(kitchenList);
+      } catch {
+        console.warn("[KDS] Initial fetch warning");
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchKitchenOrders();
-    const interval = setInterval(fetchKitchenOrders, 3000);
-    return () => clearInterval(interval);
-  }, []);
+
+    const unsubscribe = firestoreService.subscribeOrders(
+      currentRestaurantId,
+      (liveOrders) => {
+        const kitchenList = liveOrders.filter(
+          (o) => o.status === "NEW" || o.status === "ACCEPTED" || o.status === "PREPARING"
+        );
+        setOrders(kitchenList);
+        setLoading(false);
+      },
+      (err) => {
+        console.warn("[KDS] Listener error:", err.message);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentRestaurantId]);
 
   const handleKitchenStatus = async (orderId: string, nextStatus: OrderStatus) => {
     try {
@@ -59,7 +81,7 @@ export default function KitchenDisplaySystemPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status: nextStatus,
-          updatedBy: "Kitchen Chef",
+          updatedBy: user?.displayName || user?.email || "Kitchen Chef",
         }),
       });
 
@@ -68,7 +90,7 @@ export default function KitchenDisplaySystemPage() {
 
       if (nextStatus === "READY") {
         setOrders((prev) => prev.filter((o) => o.id !== orderId));
-        toast.success("Order plated and notified to floor staff!");
+        toast.success("Order plated and marked ready to serve!");
       } else {
         setOrders((prev) =>
           prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o))
@@ -80,9 +102,9 @@ export default function KitchenDisplaySystemPage() {
   };
 
   return (
-    <div className="p-4 sm:p-6 w-full flex-1 flex flex-col bg-slate-950 text-white">
+    <div className="w-full flex-1 flex flex-col text-white space-y-6">
       {/* Top KDS Bar */}
-      <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-6">
+      <div className="flex items-center justify-between pb-4 border-b border-slate-800">
         <div className="flex items-center space-x-3">
           <div className="h-10 w-10 rounded-xl bg-orange-600 flex items-center justify-center text-white shadow-lg">
             <ChefHat className="h-6 w-6" />
@@ -106,21 +128,24 @@ export default function KitchenDisplaySystemPage() {
 
       {/* Large Kitchen Tickets Grid */}
       {orders.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center py-20 text-slate-500">
+        <div className="flex-1 flex flex-col items-center justify-center py-20 text-slate-500 bg-slate-950/60 rounded-3xl border border-slate-800">
           <CheckCircle2 className="h-16 w-16 text-emerald-500/80 mb-3" />
           <h2 className="text-xl font-bold text-slate-200">All Kitchen Orders Cleared</h2>
-          <p className="text-xs text-slate-400 mt-1">Stand by for new table QR tickets.</p>
+          <p className="text-xs text-slate-400 mt-1">Standing by for new table tickets.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {orders.map((ord) => {
             const isCooking = ord.status === "PREPARING";
+            const isUnaccepted = ord.status === "NEW";
 
             return (
               <div
                 key={ord.id}
                 className={`rounded-2xl border-2 p-5 flex flex-col justify-between transition-all ${
-                  isCooking
+                  isUnaccepted
+                    ? "bg-slate-900/90 border-brand-500 shadow-elevated ring-2 ring-brand-500/30 animate-pulse"
+                    : isCooking
                     ? "bg-slate-900/90 border-amber-500 shadow-elevated"
                     : "bg-slate-900/70 border-slate-700"
                 }`}
@@ -142,7 +167,7 @@ export default function KitchenDisplaySystemPage() {
                         <Clock className="h-3.5 w-3.5 mr-1" />
                         {timeAgo(ord.createdAt)}
                       </span>
-                      <span className="text-[10px] text-slate-500 block mt-1 font-mono">
+                      <span className="text-[10px] text-slate-400 block mt-1 font-mono uppercase font-bold">
                         {ord.status}
                       </span>
                     </div>
@@ -184,8 +209,16 @@ export default function KitchenDisplaySystemPage() {
                 </div>
 
                 {/* Big Action Button for Kitchen Cook */}
-                <div className="pt-4 border-t border-slate-800 mt-6">
-                  {ord.status === "PREPARING" ? (
+                <div className="pt-4 border-t border-slate-800 mt-6 space-y-2">
+                  {ord.status === "NEW" ? (
+                    <button
+                      onClick={() => handleKitchenStatus(ord.id, "ACCEPTED")}
+                      className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-extrabold text-sm rounded-xl flex items-center justify-center space-x-2 shadow-lg transition"
+                    >
+                      <Check className="h-5 w-5" />
+                      <span>ACCEPT TICKET</span>
+                    </button>
+                  ) : ord.status === "PREPARING" ? (
                     <button
                       onClick={() => handleKitchenStatus(ord.id, "READY")}
                       className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-extrabold text-sm rounded-xl flex items-center justify-center space-x-2 shadow-lg transition"

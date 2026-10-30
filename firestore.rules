@@ -134,5 +134,11 @@ service cloud.firestore {
     match /adminAuditLogs/{logId} {
       allow read, write: if isSuperAdmin();
     }
+
+    // Push Subscriptions Collection
+    match /pushSubscriptions/{subId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.userId || isVivexaStaff());
+      allow write: if isSuperAdmin();
+    }
   }
 }

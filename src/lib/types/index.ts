@@ -14,6 +14,15 @@ export type UserRole =
   | 'KITCHEN_STAFF'
   | 'CUSTOMER_GUEST';
 
+export type NotificationSoundFile = '/a1.mp3' | '/a2.mp3' | '/a3.mp3' | '/a4.mp4' | '/a5.mp3';
+
+export interface StaffNotificationPreferences {
+  orderSound: NotificationSoundFile;
+  soundEnabled: boolean;
+  browserPushEnabled: boolean;
+  updatedAt: string;
+}
+
 export interface UserProfile {
   uid: string;
   email: string;
@@ -21,6 +30,7 @@ export interface UserProfile {
   phoneNumber?: string;
   role: UserRole;
   restaurantId?: string; // Set for restaurant-specific roles
+  notificationPreferences?: StaffNotificationPreferences;
   createdAt: string;
   updatedAt: string;
   isActive: boolean;
@@ -340,6 +350,24 @@ export interface OrderItem {
     note?: string;
   }[];
   customerNotes?: string;
+  acceptedBy?: {
+    uid: string;
+    name: string;
+    email: string;
+    at: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PushSubscriptionRecord {
+  id: string; // Token hash or unique token ID
+  token: string;
+  userId: string;
+  userEmail: string;
+  userRole: UserRole;
+  restaurantId: string;
+  deviceType?: string;
   createdAt: string;
   updatedAt: string;
 }

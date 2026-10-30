@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+// ==============================================================================
+// RESTROCHARGE - Active Dining Floor Orders Page
+// Real-time table ticket stream for floor waitstaff and managers.
+// Integrates with OrderAlertContext for immediate alert stopping upon order acceptance.
+// ==============================================================================
+
+import React, { useState, useEffect } from "react";
 import {
   Clock,
   ChefHat,
@@ -14,61 +20,85 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { audioAlert } from "@/components/staff/audio-alert";
 import { OrderItem, OrderStatus } from "@/lib/types";
 import { formatCurrency, formatTime, timeAgo } from "@/lib/utils";
 import { useAuth } from "@/context/auth-context";
+import { useOrderAlert } from "@/context/order-alert-context";
 import { toast } from "sonner";
 import { authFetch } from "@/lib/auth/client-auth";
+import { firestoreService } from "@/lib/services/firestore-service";
 
 export default function StaffFloorOrdersPage() {
   const { user } = useAuth();
   const currentRestaurantId = user?.restaurantId || "";
+  const { acceptOrder } = useOrderAlert();
 
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [statusFilter, setStatusFilter] = useState<string>("active");
-  const previousOrderCount = useRef<number>(0);
+  const [isAccepting, setIsAccepting] = useState<string | null>(null);
 
-  const fetchOrders = async () => {
+  // Initial fetch and real-time subscription
+  useEffect(() => {
     if (!currentRestaurantId) {
       setOrders([]);
       setLoading(false);
       return;
     }
-    try {
-      const res = await authFetch(`/api/orders?restaurantId=${currentRestaurantId}`);
-      const data = await res.json();
-      const list: OrderItem[] = data.orders || [];
 
-      // Check for incoming new orders to trigger sound chime
-      if (previousOrderCount.current > 0 && list.length > previousOrderCount.current) {
-        audioAlert.playNewOrderChime();
-        toast.info("🔔 New customer order received!");
+    // 1. Initial HTTP fetch
+    const fetchOrders = async () => {
+      try {
+        const res = await authFetch(`/api/orders?restaurantId=${currentRestaurantId}`);
+        const data = await res.json();
+        if (data.orders) {
+          setOrders(data.orders);
+        }
+      } catch (e) {
+        console.warn("[FloorOrders] Initial fetch error:", e);
+      } finally {
+        setLoading(false);
       }
-      previousOrderCount.current = list.length;
-      setOrders(list);
-    } catch {
-      console.error("Order polling error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
+    };
     fetchOrders();
-    const interval = setInterval(fetchOrders, 4000);
-    return () => clearInterval(interval);
-  }, []);
+
+    // 2. Real-time Firestore subscription
+    const unsubscribe = firestoreService.subscribeOrders(
+      currentRestaurantId,
+      (liveOrders) => {
+        setOrders(liveOrders);
+        setLoading(false);
+      },
+      (err) => {
+        console.warn("[FloorOrders] Real-time listener error:", err.message);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentRestaurantId]);
 
   const handleUpdateStatus = async (orderId: string, nextStatus: OrderStatus) => {
+    if (nextStatus === "ACCEPTED") {
+      setIsAccepting(orderId);
+      const success = await acceptOrder(orderId);
+      setIsAccepting(null);
+      if (success) {
+        setOrders((prev) =>
+          prev.map((o) => (o.id === orderId ? { ...o, status: "ACCEPTED" } : o))
+        );
+      }
+      return;
+    }
+
     try {
       const res = await authFetch(`/api/orders/${orderId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status: nextStatus,
-          updatedBy: "Floor Staff",
+          updatedBy: user?.displayName || user?.email || "Floor Staff",
         }),
       });
 
@@ -87,14 +117,19 @@ export default function StaffFloorOrdersPage() {
   // Filter orders
   const filtered = orders.filter((o) => {
     if (statusFilter === "active") {
-      return o.status === "NEW" || o.status === "ACCEPTED" || o.status === "PREPARING" || o.status === "READY";
+      return (
+        o.status === "NEW" ||
+        o.status === "ACCEPTED" ||
+        o.status === "PREPARING" ||
+        o.status === "READY"
+      );
     }
     if (statusFilter === "all") return true;
     return o.status === statusFilter;
   });
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto w-full space-y-6">
+    <div className="space-y-6">
       {/* Top Filter Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
@@ -108,7 +143,7 @@ export default function StaffFloorOrdersPage() {
 
         {/* Filter Pills */}
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          {["active", "NEW", "PREPARING", "READY", "SERVED", "all"].map((st) => (
+          {["active", "NEW", "ACCEPTED", "PREPARING", "READY", "SERVED", "all"].map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
@@ -129,7 +164,9 @@ export default function StaffFloorOrdersPage() {
         <div className="py-20 text-center bg-slate-950/60 rounded-3xl border border-slate-800 text-slate-500">
           <Utensils className="h-10 w-10 mx-auto mb-2 text-slate-600" />
           <h3 className="text-sm font-semibold text-slate-300">No matching tickets</h3>
-          <p className="text-xs text-slate-500 mt-1">Orders placed via table QRs appear here instantly.</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Orders placed via table QRs appear here instantly in real time.
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -142,7 +179,7 @@ export default function StaffFloorOrdersPage() {
                 key={ord.id}
                 className={`rounded-2xl border p-5 flex flex-col justify-between transition-all shadow-md ${
                   isNew
-                    ? "bg-slate-900 border-brand-500/80 ring-2 ring-brand-500/30"
+                    ? "bg-slate-900 border-brand-500/80 ring-2 ring-brand-500/30 animate-pulse"
                     : isReady
                     ? "bg-slate-900 border-emerald-500/80 ring-2 ring-emerald-500/30"
                     : "bg-slate-900/90 border-slate-800"
@@ -212,6 +249,13 @@ export default function StaffFloorOrdersPage() {
                       <strong>Note:</strong> {ord.customerNotes}
                     </div>
                   )}
+
+                  {/* Claimed/Accepted information */}
+                  {ord.acceptedBy && (
+                    <div className="mt-2 text-[10px] text-slate-500 font-mono">
+                      Claimed by {ord.acceptedBy.name} at {formatTime(ord.acceptedBy.at)}
+                    </div>
+                  )}
                 </div>
 
                 {/* Status action buttons */}
@@ -219,10 +263,12 @@ export default function StaffFloorOrdersPage() {
                   {ord.status === "NEW" && (
                     <Button
                       size="sm"
+                      disabled={isAccepting === ord.id}
                       onClick={() => handleUpdateStatus(ord.id, "ACCEPTED")}
-                      className="w-full bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs"
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 shadow"
                     >
-                      Accept Order Ticket
+                      <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                      {isAccepting === ord.id ? "Accepting..." : "Accept Order Ticket"}
                     </Button>
                   )}
 
@@ -262,7 +308,7 @@ export default function StaffFloorOrdersPage() {
                   {ord.status !== "SERVED" && ord.status !== "CANCELLED" && (
                     <button
                       onClick={() => handleUpdateStatus(ord.id, "CANCELLED")}
-                      className="w-full text-center text-[10px] text-slate-500 hover:text-red-400 py-1 transition"
+                      className="w-full text-center text-[10px] text-slate-500 hover:text-red-400 py-1 transition cursor-pointer"
                     >
                       Cancel Order
                     </button>

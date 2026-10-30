@@ -219,6 +219,12 @@ class DataStore {
     return order;
   }
 
+  public saveOrderLocally(order: OrderItem): OrderItem {
+    this.orders.set(order.id, order);
+    this.notifyOrderListeners(order.restaurantId);
+    return order;
+  }
+
   public updateOrderStatus(
     orderId: string,
     status: OrderStatus,

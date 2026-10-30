@@ -1,5 +1,10 @@
 "use client";
 
+// ==============================================================================
+// RESTROCHARGE - Restaurant Admin Orders Management Page
+// Real-time table orders, fast ticket acceptance, and audible alert integration.
+// ==============================================================================
+
 import React, { useState, useEffect } from "react";
 import {
   ShoppingBag,
@@ -24,8 +29,11 @@ import { formatCurrency, formatDateTime } from "@/lib/utils";
 import { authFetch } from "@/lib/auth/client-auth";
 import { CombinedBillModal } from "@/components/public/combined-bill-modal";
 import { toast } from "sonner";
+import { firestoreService } from "@/lib/services/firestore-service";
+import { OrderAlertProvider } from "@/context/order-alert-context";
+import { OrderAlertBanner } from "@/components/staff/alert-banner";
 
-export default function RestaurantOrdersPage() {
+function RestaurantOrdersContent() {
   const { user } = useAuth();
   const {
     restaurantId: currentRestaurantId,
@@ -61,14 +69,16 @@ export default function RestaurantOrdersPage() {
   };
 
   useEffect(() => {
-    async function load() {
-      if (!currentRestaurantId) {
-        if (!resLoading) {
-          setOrders([]);
-          setLoading(false);
-        }
-        return;
+    if (!currentRestaurantId) {
+      if (!resLoading) {
+        setOrders([]);
+        setLoading(false);
       }
+      return;
+    }
+
+    // 1. Initial HTTP Fetch
+    async function load() {
       try {
         setLoading(true);
         const res = await authFetch(`/api/orders?restaurantId=${currentRestaurantId}`);
@@ -81,6 +91,22 @@ export default function RestaurantOrdersPage() {
       }
     }
     load();
+
+    // 2. Real-time Firestore Subscription
+    const unsubscribe = firestoreService.subscribeOrders(
+      currentRestaurantId,
+      (liveOrders) => {
+        setOrders(liveOrders);
+        setLoading(false);
+      },
+      (err) => {
+        console.warn("[AdminOrders] Firestore listener warning:", err.message);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
   }, [currentRestaurantId, resLoading]);
 
   const filtered = orders.filter((o) => {
@@ -107,7 +133,7 @@ export default function RestaurantOrdersPage() {
             Order Management & History
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Real-time customer QR orders with portion selections and backend bill snapshots.
+            Real-time customer QR orders with portion selections and continuous audible alerts.
           </p>
         </div>
 
@@ -122,7 +148,7 @@ export default function RestaurantOrdersPage() {
         </div>
       </div>
 
-      {/* Multi-tenant Venue Switcher Banner (Visible to Super Admin or Multi-restaurant Managers) */}
+      {/* Multi-tenant Venue Switcher Banner */}
       {(isSuperAdmin || allRestaurants.length > 1) && (
         <div className="bg-brand-50/70 border border-brand-200/70 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
           <div className="flex items-center space-x-3">
@@ -167,6 +193,9 @@ export default function RestaurantOrdersPage() {
           )}
         </div>
       )}
+
+      {/* Live Order Alert Banner (continuous ringing indicator & instant claim) */}
+      <OrderAlertBanner />
 
       {/* Filter Tabs */}
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -215,7 +244,9 @@ export default function RestaurantOrdersPage() {
           {filtered.map((ord) => (
             <div
               key={ord.id}
-              className="bg-white rounded-2xl border border-slate-200 p-5 shadow-card hover:shadow-soft transition space-y-3"
+              className={`bg-white rounded-2xl border p-5 shadow-card hover:shadow-soft transition space-y-3 ${
+                ord.status === "NEW" ? "border-brand-500/80 ring-2 ring-brand-500/20" : "border-slate-200"
+              }`}
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
                 <div className="flex items-center space-x-3">
@@ -274,6 +305,12 @@ export default function RestaurantOrdersPage() {
                       <strong>Note:</strong> {ord.customerNotes}
                     </p>
                   )}
+
+                  {ord.acceptedBy && (
+                    <p className="mt-1.5 text-[10px] text-slate-500 font-mono">
+                      Accepted by {ord.acceptedBy.name}
+                    </p>
+                  )}
                 </div>
 
                 {/* Bill Snapshot */}
@@ -327,5 +364,13 @@ export default function RestaurantOrdersPage() {
         restaurantName={activeRestaurant?.name}
       />
     </div>
+  );
+}
+
+export default function RestaurantOrdersPage() {
+  return (
+    <OrderAlertProvider>
+      <RestaurantOrdersContent />
+    </OrderAlertProvider>
   );
 }
