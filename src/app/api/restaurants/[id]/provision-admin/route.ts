@@ -36,6 +36,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     let restaurant = dataStore.getRestaurantById(id);
     if (!restaurant) {
       restaurant = await firestoreService.getRestaurantById(id);
+      if (restaurant) {
+        dataStore.saveRestaurantLocally(restaurant);
+      }
     }
 
     if (!restaurant) {

@@ -168,8 +168,8 @@ export interface RestaurantProfile {
   websiteConfig: RestaurantWebsiteConfig;
   billingConfig: BillingConfig;
   subscription: SubscriptionInfo;
-  adminProvisioningStatus?: 'PROVISIONED' | 'PENDING' | 'FAILED';
-  adminProvisioningError?: string;
+  adminProvisioningStatus?: 'PROVISIONED' | 'PENDING' | 'FAILED' | 'PARTIAL_FAILURE';
+  adminProvisioningError?: string | null;
   adminProvisionedAt?: string;
   createdAt: string;
   updatedAt: string;

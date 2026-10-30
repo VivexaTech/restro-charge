@@ -570,6 +570,24 @@ export default function SuperAdminRestaurantsPage() {
                             <ShieldCheck className="h-3 w-3 mr-1 text-emerald-600" />
                             Admin Provisioned
                           </span>
+                        ) : r.adminProvisioningStatus === "PARTIAL_FAILURE" ? (
+                          <div className="flex items-center space-x-1.5">
+                            <span
+                              className="inline-flex items-center text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200"
+                              title={r.adminProvisioningError || "Partial failure saving Firestore records"}
+                            >
+                              <ShieldAlert className="h-3 w-3 mr-1 text-amber-600" />
+                              Partial Failure
+                            </span>
+                            <button
+                              onClick={() => handleProvisionAdmin(r)}
+                              disabled={provisioningRestId === r.id}
+                              className="text-[10px] font-semibold text-brand-600 hover:text-brand-800 underline disabled:opacity-50"
+                              title="Retry provisioning Restaurant Admin account"
+                            >
+                              {provisioningRestId === r.id ? "Retrying..." : "Retry"}
+                            </button>
+                          </div>
                         ) : r.adminProvisioningStatus === "FAILED" ? (
                           <div className="flex items-center space-x-1.5">
                             <span

@@ -10,6 +10,7 @@ import {
   getFirebaseAdminConfigInfo,
   verifyFirebaseAdminConnection,
   adminAuth,
+  adminDb,
 } from "../src/lib/firebase/admin";
 import { provisionRestaurantAdmin } from "../src/lib/services/admin-provisioning";
 import { dataStore } from "../src/lib/services/data-store";
@@ -203,7 +204,7 @@ async function runTests() {
   assert.strictEqual(updatedRest.createdAt, initialCreatedAt, "Original createdAt timestamp must be preserved");
   assert.strictEqual(updatedRest.ownerUid, provResult1.uid, "ownerUid must be updated to Firebase Auth UID");
   assert.strictEqual(updatedRest.adminProvisioningStatus, "PROVISIONED");
-  assert.strictEqual(updatedRest.adminProvisioningError, undefined);
+  assert.ok(!updatedRest.adminProvisioningError, "adminProvisioningError must be cleared");
   assert.ok(updatedRest.adminProvisionedAt, "adminProvisionedAt must be set");
 
   // Verify custom claims in Firebase Auth
@@ -211,7 +212,19 @@ async function runTests() {
   assert.strictEqual(createdAuthUser.customClaims?.role, "RESTAURANT_OWNER");
   assert.strictEqual(createdAuthUser.customClaims?.restaurantId, testRestId);
 
-  console.log(`   ✅ Test 3 Passed: User ${createdAuthUser.email} provisioned with custom claims { role: "RESTAURANT_OWNER", restaurantId: "${testRestId}" }. No duplicate restaurant created.`);
+  // Verify Firestore User Profile
+  const userDocSnap = await adminDb.collection("users").doc(provResult1.uid!).get();
+  assert.strictEqual(userDocSnap.exists, true, "User profile document must exist in Firestore");
+  assert.strictEqual(userDocSnap.data()?.role, "RESTAURANT_OWNER");
+  assert.strictEqual(userDocSnap.data()?.restaurantId, testRestId);
+
+  // Verify Firestore Restaurant Membership
+  const membDocSnap = await adminDb.collection("restaurantMemberships").doc(`memb_${provResult1.uid}_${testRestId}`).get();
+  assert.strictEqual(membDocSnap.exists, true, "Restaurant membership document must exist in Firestore");
+  assert.strictEqual(membDocSnap.data()?.role, "RESTAURANT_OWNER");
+  assert.strictEqual(membDocSnap.data()?.status, "ACTIVE");
+
+  console.log(`   ✅ Test 3 Passed: User ${createdAuthUser.email} provisioned with custom claims, user doc, and membership in Firestore. No duplicate restaurant created.`);
 
   // ------------------------------------------------------------------------------
   // TEST 4: Idempotent Re-provisioning / Existing User (Preserves Password/Credentials)
@@ -267,6 +280,64 @@ async function runTests() {
   assert.strictEqual(missingRestResult.errorCode, "NOT_FOUND");
 
   console.log("   ✅ Test 5 Passed: Non-existent restaurant properly rejected without corrupting store.");
+
+  // ------------------------------------------------------------------------------
+  // TEST 6: SAFE RECOVERY & VERIFICATION OF EXISTING RESTAURANT RECORD
+  // ------------------------------------------------------------------------------
+  console.log("\n--- TEST 6: RECOVERY OF EXISTING RESTAURANT RECORD ---");
+
+  const existingVenueId = "rest_recovery-venue-mvukafqo";
+  const existingDoc = await adminDb.collection("restaurants").doc(existingVenueId).get();
+  if (existingDoc.exists) {
+    const venueData = existingDoc.data()!;
+    console.log(`   Found existing restaurant in Firestore: ${venueData.name} (${existingVenueId})`);
+    console.log(`   Owner Email: ${venueData.ownerEmail}`);
+
+    const recoveryResult = await provisionRestaurantAdmin({
+      restaurantId: existingVenueId,
+      adminEmail: venueData.ownerEmail,
+      adminName: venueData.ownerName || "Anita Sharma",
+      performedBy: {
+        uid: "GDF2eldrzSNR9oltgezCr9MXt0I3",
+        email: "admin@vivexatech.in",
+        name: "Vivexa Tech Super Admin",
+      },
+    });
+
+    assert.strictEqual(recoveryResult.success, true, "Recovery must succeed");
+    assert.strictEqual(recoveryResult.status, "PROVISIONED", "Status must be PROVISIONED");
+    assert.ok(recoveryResult.uid, "Must have valid UID");
+
+    // Verify Firebase Auth
+    const authAdmin = await adminAuth.getUser(recoveryResult.uid!);
+    assert.strictEqual(authAdmin.email, venueData.ownerEmail.toLowerCase());
+    assert.strictEqual(authAdmin.customClaims?.role, "RESTAURANT_OWNER");
+    assert.strictEqual(authAdmin.customClaims?.restaurantId, existingVenueId);
+
+    // Verify Firestore User Profile
+    const profileSnap = await adminDb.collection("users").doc(recoveryResult.uid!).get();
+    assert.strictEqual(profileSnap.exists, true, "Firestore user profile must exist");
+    assert.strictEqual(profileSnap.data()?.role, "RESTAURANT_OWNER");
+    assert.strictEqual(profileSnap.data()?.restaurantId, existingVenueId);
+
+    // Verify Firestore Restaurant Membership
+    const membSnap = await adminDb.collection("restaurantMemberships").doc(`memb_${recoveryResult.uid}_${existingVenueId}`).get();
+    assert.strictEqual(membSnap.exists, true, "Firestore restaurant membership must exist");
+    assert.strictEqual(membSnap.data()?.role, "RESTAURANT_OWNER");
+    assert.strictEqual(membSnap.data()?.status, "ACTIVE");
+
+    // Verify Restaurant Document
+    const postRecoveryRest = await adminDb.collection("restaurants").doc(existingVenueId).get();
+    const postData = postRecoveryRest.data()!;
+    assert.strictEqual(postData.ownerUid, recoveryResult.uid);
+    assert.strictEqual(postData.adminProvisioningStatus, "PROVISIONED");
+    assert.strictEqual(postData.adminProvisioningError, null);
+    assert.ok(postData.adminProvisionedAt);
+
+    console.log(`   ✅ Test 6 Passed: Existing restaurant ${existingVenueId} successfully recovered and provisioned!`);
+  } else {
+    console.log("   (Skipping Test 6: existing restaurant not found)");
+  }
 
   console.log("\n🎉 ALL RESTAURANT ADMIN PROVISIONING TESTS PASSED 100%!");
   process.exit(0);
