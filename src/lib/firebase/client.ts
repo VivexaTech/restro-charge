@@ -6,7 +6,7 @@ import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
 import { getAuth, Auth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore, Firestore } from "firebase/firestore";
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "mock-api-key",
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "restro-charge.firebaseapp.com",
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "restro-charge",
@@ -30,5 +30,21 @@ db = getFirestore(app);
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: "select_account" });
+
+/**
+ * Returns Firebase Messaging instance in browser environments that support Web Push.
+ */
+export async function getClientMessaging() {
+  if (typeof window === "undefined") return null;
+  try {
+    const { getMessaging, isSupported } = await import("firebase/messaging");
+    const supported = await isSupported().catch(() => false);
+    if (!supported) return null;
+    return getMessaging(app);
+  } catch (err) {
+    console.warn("[Firebase Client] Messaging init error:", err);
+    return null;
+  }
+}
 
 export { app, auth, db, googleProvider };

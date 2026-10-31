@@ -62,8 +62,10 @@ export async function POST(req: NextRequest) {
       userRole: (staffUser.role as UserRole) || "ORDER_STAFF",
       restaurantId,
       deviceType: String(deviceType).slice(0, 30),
+      isActive: true,
       createdAt: nowIso,
       updatedAt: nowIso,
+      lastRegisteredAt: nowIso,
     };
 
     await adminDb.collection("pushSubscriptions").doc(subId).set(record, { merge: true });

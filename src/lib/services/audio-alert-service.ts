@@ -99,7 +99,25 @@ class AudioAlertManager {
       } catch {
         // ignore localStorage access issues
       }
+
+      // Auto-unlock audio passively on first user interaction anywhere on the page
+      this.setupPassiveUnlock();
     }
+  }
+
+  private setupPassiveUnlock() {
+    if (typeof window === "undefined") return;
+
+    const passiveUnlock = () => {
+      this.unlock().catch(() => {});
+      window.removeEventListener("click", passiveUnlock);
+      window.removeEventListener("touchstart", passiveUnlock);
+      window.removeEventListener("keydown", passiveUnlock);
+    };
+
+    window.addEventListener("click", passiveUnlock, { passive: true, once: true });
+    window.addEventListener("touchstart", passiveUnlock, { passive: true, once: true });
+    window.addEventListener("keydown", passiveUnlock, { passive: true, once: true });
   }
 
   private initTabSync() {
@@ -167,6 +185,9 @@ class AudioAlertManager {
       await dummy.play();
 
       this.isAutoplayBlocked = false;
+      try {
+        localStorage.setItem("restrocharge_audio_unlocked", "true");
+      } catch {}
       this.notifyStateChange();
 
       // If orders were pending while blocked, start playing now
@@ -516,7 +537,7 @@ class AudioAlertManager {
   }
 
   public isBlocked(): boolean {
-    return this.isAutoplayBlocked;
+    return this.isAutoplayBlocked && this.activePendingOrders.size > 0;
   }
 
   public isPreviewing(): boolean {

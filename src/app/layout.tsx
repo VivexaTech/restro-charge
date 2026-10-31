@@ -19,6 +19,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  themeColor: "#f97316",
 };
 
 export const metadata: Metadata = {
@@ -26,6 +27,16 @@ export const metadata: Metadata = {
   title: "RestroCharge | Smart Restaurant Management Platform",
   description:
     "Manage restaurant websites, QR-based table ordering, menus, orders, subscriptions, and restaurant operations with RestroCharge.",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/icon-192.png",
+    apple: "/apple-touch-icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "RestroCharge",
+  },
   keywords: [
     "RestroCharge",
     "Restaurant Management System",

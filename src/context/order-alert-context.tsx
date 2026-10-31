@@ -3,7 +3,8 @@
 // ==============================================================================
 // RESTROCHARGE - Order Alert & Notification Context
 // Provides continuous audible ringing for pending orders, sound selection,
-// browser push notification registration, and real-time Firestore synchronization.
+// browser push notification registration (FCM), foreground FCM push reception,
+// PWA install prompt handling, and real-time Firestore synchronization.
 // ==============================================================================
 
 import React, {
@@ -25,7 +26,7 @@ import { firestoreService } from "@/lib/services/firestore-service";
 import { useAuth } from "@/context/auth-context";
 import { authFetch } from "@/lib/auth/client-auth";
 import { toast } from "sonner";
-import { app } from "@/lib/firebase/client";
+import { firebaseConfig, getClientMessaging } from "@/lib/firebase/client";
 
 interface OrderAlertContextType {
   activeAlertOrders: OrderItem[];
@@ -36,7 +37,11 @@ interface OrderAlertContextType {
   pushPermission: "default" | "granted" | "denied" | "unsupported";
   isPushEnabled: boolean;
   isRegisteringPush: boolean;
-  unlockAudio: () => Promise<void>;
+  canInstallPWA: boolean;
+  isIOS: boolean;
+  isStandalone: boolean;
+  promptInstallPWA: () => Promise<boolean>;
+  unlockAudio: () => Promise<boolean>;
   setSelectedSound: (sound: NotificationSoundFile) => Promise<void>;
   toggleSound: (enabled?: boolean) => Promise<void>;
   enablePushNotifications: () => Promise<boolean>;
@@ -55,7 +60,11 @@ const OrderAlertContext = createContext<OrderAlertContextType>({
   pushPermission: "default",
   isPushEnabled: false,
   isRegisteringPush: false,
-  unlockAudio: async () => {},
+  canInstallPWA: false,
+  isIOS: false,
+  isStandalone: false,
+  promptInstallPWA: async () => false,
+  unlockAudio: async () => false,
   setSelectedSound: async () => {},
   toggleSound: async () => {},
   enablePushNotifications: async () => false,
@@ -84,7 +93,13 @@ export function OrderAlertProvider({ children }: { children: React.ReactNode }) 
   const [isPushEnabled, setIsPushEnabled] = useState<boolean>(false);
   const [isRegisteringPush, setIsRegisteringPush] = useState<boolean>(false);
 
-  // Sync state from audioAlertService
+  // PWA Install state
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [canInstallPWA, setCanInstallPWA] = useState<boolean>(false);
+  const [isIOS, setIsIOS] = useState<boolean>(false);
+  const [isStandalone, setIsStandalone] = useState<boolean>(false);
+
+  // 1. Sync state from audioAlertService
   useEffect(() => {
     const updateFromService = () => {
       setActiveAlertOrders(audioAlertService.getActivePendingOrders());
@@ -99,19 +114,161 @@ export function OrderAlertProvider({ children }: { children: React.ReactNode }) 
     return () => unsubscribe();
   }, []);
 
-  // Inspect browser Notification permission on mount
+  // 2. Inspect browser Notification permission & PWA display mode on mount
   useEffect(() => {
-    if (typeof window === "undefined" || !("Notification" in window)) {
+    if (typeof window === "undefined") return;
+
+    // Detect standalone mode
+    const isStandaloneMode =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone === true;
+    setIsStandalone(isStandaloneMode);
+
+    // Detect iOS
+    const ua = window.navigator.userAgent;
+    const isIosDevice = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
+    setIsIOS(isIosDevice);
+
+    // Notification permission check
+    if (!("Notification" in window)) {
       setPushPermission("unsupported");
     } else {
       setPushPermission(Notification.permission);
-      if (Notification.permission === "granted") {
+      const isAlreadyRegistered =
+        localStorage.getItem("restrocharge_fcm_registered") === "true";
+      if (Notification.permission === "granted" && isAlreadyRegistered) {
         setIsPushEnabled(true);
       }
     }
+
+    // PWA beforeinstallprompt handler
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setCanInstallPWA(true);
+    };
+
+    const handleAppInstalled = () => {
+      setDeferredPrompt(null);
+      setCanInstallPWA(false);
+      setIsStandalone(true);
+      toast.success("RestroCharge installed successfully!");
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
   }, []);
 
-  // Load user's saved sound preference from backend
+  // 3. Silent re-registration check if already registered in localStorage
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      !("Notification" in window) ||
+      !("serviceWorker" in navigator) ||
+      !currentRestaurantId
+    ) {
+      return;
+    }
+
+    const isAlreadyRegistered =
+      localStorage.getItem("restrocharge_fcm_registered") === "true";
+
+    if (Notification.permission === "granted" && isAlreadyRegistered) {
+      setIsPushEnabled(true);
+      (async () => {
+        try {
+          const swUrl = `/firebase-messaging-sw.js?apiKey=${encodeURIComponent(
+            firebaseConfig.apiKey || ""
+          )}&projectId=${encodeURIComponent(
+            firebaseConfig.projectId || ""
+          )}&messagingSenderId=${encodeURIComponent(
+            firebaseConfig.messagingSenderId || ""
+          )}&appId=${encodeURIComponent(firebaseConfig.appId || "")}`;
+
+          const swRegistration = await navigator.serviceWorker.register(swUrl, {
+            scope: "/",
+          });
+          await navigator.serviceWorker.ready;
+
+          const messaging = await getClientMessaging();
+          if (messaging) {
+            const { getToken } = await import("firebase/messaging");
+            const vapidKey =
+              process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || undefined;
+
+            const token = await getToken(messaging, {
+              serviceWorkerRegistration: swRegistration,
+              vapidKey,
+            });
+
+            if (token) {
+              await authFetch("/api/notifications/push-token", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  token,
+                  restaurantId: currentRestaurantId,
+                  deviceType: navigator.userAgent.includes("Mobile")
+                    ? "mobile"
+                    : "desktop",
+                }),
+              });
+            }
+          }
+        } catch (err) {
+          console.warn("[OrderAlertContext] Silent token refresh:", err);
+        }
+      })();
+    }
+  }, [currentRestaurantId]);
+
+  // 4. Foreground FCM push listener
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    let unsubscribe: (() => void) | undefined;
+
+    async function initForegroundMessaging() {
+      try {
+        const messaging = await getClientMessaging();
+        if (!messaging) return;
+
+        const { onMessage } = await import("firebase/messaging");
+        unsubscribe = onMessage(messaging, (payload) => {
+          console.log("[FCM Foreground Message Received]", payload);
+          const title =
+            payload.notification?.title ||
+            payload.data?.title ||
+            "New Order Received!";
+          const body =
+            payload.notification?.body ||
+            payload.data?.body ||
+            "A new order ticket has arrived.";
+
+          toast.info(title, {
+            description: body,
+            duration: 6000,
+          });
+
+          // Quietly unlock audio context to allow incoming alert chime
+          audioAlertService.unlock().catch(() => {});
+        });
+      } catch (err) {
+        console.warn("[FCM] Foreground listener init error:", err);
+      }
+    }
+
+    initForegroundMessaging();
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // 5. Load user's saved sound preference from backend
   useEffect(() => {
     if (!user || !user.uid) return;
 
@@ -131,11 +288,18 @@ export function OrderAlertProvider({ children }: { children: React.ReactNode }) 
               setSoundEnabledState(data.preferences.soundEnabled);
             }
             if (typeof data.preferences.browserPushEnabled === "boolean") {
-              setIsPushEnabled(data.preferences.browserPushEnabled);
+              if (
+                data.preferences.browserPushEnabled &&
+                typeof window !== "undefined" &&
+                "Notification" in window &&
+                Notification.permission === "granted"
+              ) {
+                setIsPushEnabled(true);
+              }
             }
           }
         }
-      } catch (err) {
+      } catch {
         // Fallback to local defaults
       }
     }
@@ -146,7 +310,7 @@ export function OrderAlertProvider({ children }: { children: React.ReactNode }) 
     };
   }, [user]);
 
-  // Real-time Firestore order subscription scoped to restaurant
+  // 6. Real-time Firestore order subscription scoped to restaurant
   useEffect(() => {
     if (!currentRestaurantId) {
       audioAlertService.reconcilePendingOrders([]);
@@ -180,8 +344,8 @@ export function OrderAlertProvider({ children }: { children: React.ReactNode }) 
   }, [currentRestaurantId]);
 
   // Unlock audio gesture handler
-  const unlockAudio = useCallback(async () => {
-    await audioAlertService.unlock();
+  const unlockAudio = useCallback(async (): Promise<boolean> => {
+    return await audioAlertService.unlock();
   }, []);
 
   // Sound selection with backend persistence
@@ -255,7 +419,9 @@ export function OrderAlertProvider({ children }: { children: React.ReactNode }) 
         const data = await res.json();
         if (!res.ok) {
           if (res.status === 409) {
-            toast.error(data.error || "Order was already accepted by another staff member.");
+            toast.error(
+              data.error || "Order was already accepted by another staff member."
+            );
             // Remove from local alert since it's already claimed
             audioAlertService.removeOrderAlert(orderId);
             return false;
@@ -275,7 +441,22 @@ export function OrderAlertProvider({ children }: { children: React.ReactNode }) 
     [user]
   );
 
-  // Enable Browser Push Notifications
+  // PWA Install prompt trigger
+  const promptInstallPWA = useCallback(async (): Promise<boolean> => {
+    if (!deferredPrompt) return false;
+    try {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      setDeferredPrompt(null);
+      setCanInstallPWA(false);
+      return outcome === "accepted";
+    } catch (err) {
+      console.warn("[PWA] Prompt error:", err);
+      return false;
+    }
+  }, [deferredPrompt]);
+
+  // Enable Browser Push Notifications (FCM)
   const enablePushNotifications = useCallback(async (): Promise<boolean> => {
     if (typeof window === "undefined" || !("Notification" in window)) {
       toast.error("Browser push notifications are not supported in this browser.");
@@ -303,46 +484,58 @@ export function OrderAlertProvider({ children }: { children: React.ReactNode }) 
         return false;
       }
 
-      // 2. Register service worker
-      const swRegistration = await navigator.serviceWorker.register(
-        "/firebase-messaging-sw.js",
-        { scope: "/" }
-      );
+      // 2. Register service worker with dynamic Firebase configuration query params
+      const swUrl = `/firebase-messaging-sw.js?apiKey=${encodeURIComponent(
+        firebaseConfig.apiKey || ""
+      )}&projectId=${encodeURIComponent(
+        firebaseConfig.projectId || ""
+      )}&messagingSenderId=${encodeURIComponent(
+        firebaseConfig.messagingSenderId || ""
+      )}&appId=${encodeURIComponent(firebaseConfig.appId || "")}`;
+
+      const swRegistration = await navigator.serviceWorker.register(swUrl, {
+        scope: "/",
+      });
       await navigator.serviceWorker.ready;
 
       // 3. Obtain FCM token
       let token: string | null = null;
       try {
-        const { getMessaging, getToken } = await import("firebase/messaging");
-        const messaging = getMessaging(app);
+        const messaging = await getClientMessaging();
+        if (messaging) {
+          const { getToken } = await import("firebase/messaging");
+          const vapidKey =
+            process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || undefined;
 
-        const vapidKey =
-          process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || undefined;
-
-        token = await getToken(messaging, {
-          serviceWorkerRegistration: swRegistration,
-          vapidKey,
-        });
+          token = await getToken(messaging, {
+            serviceWorkerRegistration: swRegistration,
+            vapidKey,
+          });
+        }
       } catch (fcmErr: any) {
         console.warn("[Push Notifications] Direct FCM token retrieval:", fcmErr.message);
       }
 
-      // If token obtained or if testing Web Push
+      // 4. Save token to Firestore pushSubscriptions collection via backend API
       if (token && currentRestaurantId) {
-        // Send token to backend
         const regRes = await authFetch("/api/notifications/push-token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             token,
             restaurantId: currentRestaurantId,
-            deviceType: navigator.userAgent.includes("Mobile") ? "mobile" : "desktop",
+            deviceType: navigator.userAgent.includes("Mobile")
+              ? "mobile"
+              : "desktop",
           }),
         });
 
         if (regRes.ok) {
           setIsPushEnabled(true);
-          toast.success("Browser push notifications enabled for new orders!");
+          try {
+            localStorage.setItem("restrocharge_fcm_registered", "true");
+          } catch {}
+          toast.success("Order notifications enabled successfully!");
           setIsRegisteringPush(false);
           return true;
         }
@@ -350,12 +543,17 @@ export function OrderAlertProvider({ children }: { children: React.ReactNode }) 
 
       // Fallback: permission granted even if FCM token configuration is pending
       setIsPushEnabled(true);
+      try {
+        localStorage.setItem("restrocharge_fcm_registered", "true");
+      } catch {}
       toast.success("Browser notifications enabled!");
       setIsRegisteringPush(false);
       return true;
     } catch (err: any) {
       console.error("[Push Notifications] Registration error:", err);
-      toast.error("Failed to enable push notifications: " + (err.message || "Unknown error"));
+      toast.error(
+        "Failed to enable push notifications: " + (err.message || "Unknown error")
+      );
       setIsRegisteringPush(false);
       return false;
     }
@@ -364,6 +562,10 @@ export function OrderAlertProvider({ children }: { children: React.ReactNode }) 
   // Disable Browser Push Notifications
   const disablePushNotifications = useCallback(async () => {
     setIsPushEnabled(false);
+    try {
+      localStorage.removeItem("restrocharge_fcm_registered");
+    } catch {}
+
     try {
       await authFetch("/api/notifications/push-token", {
         method: "DELETE",
@@ -392,6 +594,10 @@ export function OrderAlertProvider({ children }: { children: React.ReactNode }) 
         pushPermission,
         isPushEnabled,
         isRegisteringPush,
+        canInstallPWA,
+        isIOS,
+        isStandalone,
+        promptInstallPWA,
         unlockAudio,
         setSelectedSound,
         toggleSound,

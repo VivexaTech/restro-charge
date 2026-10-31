@@ -3,7 +3,7 @@
 // ==============================================================================
 // RESTROCHARGE - Multi-Order Real-Time Alert Banner
 // Alerts staff to unaccepted orders with continuous ringing status and fast acceptance.
-// Handles autoplay unlock requirements gracefully per browser policies.
+// Prominently presents 'Enable Order Notifications' for FCM and PWA installation.
 // ==============================================================================
 
 import React, { useState } from "react";
@@ -14,8 +14,9 @@ import {
   AlertCircle,
   CheckCircle2,
   Settings,
-  Sparkles,
-  ArrowRight,
+  Download,
+  Smartphone,
+  Share,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +34,13 @@ export function OrderAlertBanner() {
     soundEnabled,
     selectedSound,
     pushPermission,
+    isPushEnabled,
+    isRegisteringPush,
     enablePushNotifications,
+    canInstallPWA,
+    isIOS,
+    isStandalone,
+    promptInstallPWA,
   } = useOrderAlert();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -48,8 +55,8 @@ export function OrderAlertBanner() {
   return (
     <>
       <div className="w-full space-y-3">
-        {/* 1. Autoplay Blocked Warning Banner */}
-        {isAutoplayBlocked && (
+        {/* 1. Autoplay Blocked Warning Banner (Only displayed if an order is actively pending) */}
+        {isAutoplayBlocked && activeAlertOrders.length > 0 && (
           <div className="bg-amber-950/80 border-2 border-amber-500/80 rounded-2xl p-4 text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg animate-pulse">
             <div className="flex items-center space-x-3">
               <div className="h-9 w-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
@@ -152,21 +159,107 @@ export function OrderAlertBanner() {
           </div>
         )}
 
-        {/* 3. Push notification permission prompt if default */}
-        {pushPermission === "default" && (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-slate-400">
+        {/* 3. Prominent 'Enable Order Notifications' Setup Banner */}
+        {!isPushEnabled && pushPermission !== "denied" && (
+          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-brand-500/40 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-lg ring-1 ring-brand-500/20">
+            <div className="flex items-start sm:items-center space-x-3.5">
+              <div className="h-10 w-10 rounded-xl bg-brand-500/10 border border-brand-500/30 text-brand-400 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                <Bell className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <strong className="text-sm font-bold text-white block">
+                    Never Miss an Incoming Table Order
+                  </strong>
+                  <span className="text-[10px] bg-brand-500/20 text-brand-300 border border-brand-500/40 px-2 py-0.5 rounded-full font-semibold">
+                    Recommended
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Receive instant push notifications when orders arrive even when your screen is locked or browser is minimized.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 shrink-0 w-full sm:w-auto">
+              <Button
+                size="sm"
+                disabled={isRegisteringPush}
+                onClick={enablePushNotifications}
+                className="bg-brand-500 hover:bg-brand-400 text-white font-bold text-xs shadow-md w-full sm:w-auto h-9 px-4"
+              >
+                <Bell className="h-3.5 w-3.5 mr-1.5" />
+                {isRegisteringPush ? "Enabling..." : "Enable Order Notifications"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* 4. Push Active Confirmation Indicator */}
+        {isPushEnabled && (
+          <div className="bg-slate-950/70 border border-slate-800 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-slate-400">
             <div className="flex items-center space-x-2">
-              <Bell className="h-4 w-4 text-brand-400 shrink-0" />
-              <span>
-                Want new order alerts when your screen is locked or browser is minimized?
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-emerald-400 font-bold text-xs">
+                ✅ Order Notifications Active
+              </span>
+              <span className="hidden sm:inline text-slate-600">•</span>
+              <span className="hidden sm:inline text-[11px] text-slate-400">
+                Device registered for background order pushes and instant alerts.
               </span>
             </div>
+
             <button
-              onClick={enablePushNotifications}
-              className="text-brand-400 hover:text-brand-300 font-semibold underline underline-offset-2 shrink-0 cursor-pointer"
+              onClick={() => setSettingsOpen(true)}
+              className="text-slate-400 hover:text-white text-xs font-medium underline underline-offset-2 ml-2 transition"
             >
-              Enable Browser Push Notifications →
+              Alert Tone
             </button>
+          </div>
+        )}
+
+        {/* 5. Notifications Blocked Warning */}
+        {pushPermission === "denied" && (
+          <div className="bg-red-950/20 border border-red-900/40 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-red-300">
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />
+              <span>
+                Browser push notifications are blocked. To receive new order alerts in the background, allow notifications in your browser settings.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* 6. PWA Installation Options (Chromium / Android beforeinstallprompt) */}
+        {canInstallPWA && !isStandalone && (
+          <div className="bg-brand-950/30 border border-brand-500/30 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-brand-200">
+            <div className="flex items-center space-x-2">
+              <Smartphone className="h-4 w-4 text-brand-400 shrink-0" />
+              <span>
+                Install RestroCharge on your home screen for fullscreen kitchen and staff operation.
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={promptInstallPWA}
+              className="border-brand-500/40 text-brand-300 hover:text-white hover:bg-brand-500/20 text-xs h-7 px-3 shrink-0"
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+              Install App
+            </Button>
+          </div>
+        )}
+
+        {/* 7. iOS Safari PWA Instructions */}
+        {isIOS && !isStandalone && (
+          <div className="bg-slate-950/60 border border-slate-800 rounded-xl px-4 py-2 flex items-center justify-between text-xs text-slate-400">
+            <div className="flex items-center space-x-2">
+              <Share className="h-3.5 w-3.5 text-brand-400 shrink-0" />
+              <span>
+                Install on iPhone/iPad: Tap <strong className="text-white">Share</strong> in Safari, then select <strong className="text-white">&quot;Add to Home Screen&quot;</strong>.
+              </span>
+            </div>
           </div>
         )}
       </div>

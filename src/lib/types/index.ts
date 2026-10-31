@@ -368,8 +368,10 @@ export interface PushSubscriptionRecord {
   userRole: UserRole;
   restaurantId: string;
   deviceType?: string;
+  isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  lastRegisteredAt?: string;
 }
 
 export interface RestaurantMembership {

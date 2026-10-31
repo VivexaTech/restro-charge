@@ -14,6 +14,9 @@ export interface PushDeliveryResult {
   staleTokensRemoved: number;
 }
 
+// In-memory deduplication set to avoid sending duplicate pushes for the same order
+const sentOrderPushes = new Set<string>();
+
 export async function sendOrderPushNotification(
   order: OrderItem,
   restaurant?: RestaurantProfile | null
@@ -23,6 +26,15 @@ export async function sendOrderPushNotification(
     failureCount: 0,
     staleTokensRemoved: 0,
   };
+
+  if (!order || !order.id || sentOrderPushes.has(order.id)) {
+    return result;
+  }
+  sentOrderPushes.add(order.id);
+  if (sentOrderPushes.size > 2000) {
+    const firstKey = sentOrderPushes.values().next().value;
+    if (firstKey) sentOrderPushes.delete(firstKey);
+  }
 
   if (!isFirebaseAdminReady() || !adminDb) {
     return result;
@@ -55,7 +67,7 @@ export async function sendOrderPushNotification(
 
     const tokenMap = new Map<string, string>(); // token -> subDocId
     subscriptions.forEach((sub) => {
-      if (authorizedRoles.has(sub.userRole) && sub.token) {
+      if (authorizedRoles.has(sub.userRole) && sub.token && sub.isActive !== false) {
         tokenMap.set(sub.token, sub.id);
       }
     });
@@ -65,10 +77,10 @@ export async function sendOrderPushNotification(
       return result;
     }
 
-    // 3. Construct payload strictly without customer PII
+    // 3. Construct payload strictly without customer PII (Requirement 6)
     const venueName = restaurant?.name || "Restaurant";
-    const title = `🔔 New Order: ${order.orderNumber}`;
-    const body = `${order.tableLabel} • ${order.items.length} ${order.items.length === 1 ? "dish" : "dishes"} • ₹${order.billing.finalTotal}`;
+    const title = `New Order Received! — ${venueName}`;
+    const body = `Restaurant order #${order.orderNumber} has been placed. (${order.tableLabel} • ${order.items.length} ${order.items.length === 1 ? "dish" : "dishes"} • ₹${order.billing.finalTotal})`;
 
     const clickUrl = process.env.NEXT_PUBLIC_APP_URL
       ? `${process.env.NEXT_PUBLIC_APP_URL}/staff`
@@ -95,8 +107,8 @@ export async function sendOrderPushNotification(
         notification: {
           title,
           body,
-          icon: "/dark-logo.svg",
-          badge: "/dark-logo.svg",
+          icon: "/icon-192.png",
+          badge: "/icon-192.png",
           tag: `order-${order.id}`,
           renotify: true,
           requireInteraction: true,

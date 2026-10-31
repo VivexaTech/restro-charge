@@ -18,6 +18,7 @@ import {
   LogOut,
   Settings,
   Bell,
+  Download,
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,13 @@ function StaffHeaderControls() {
     isRinging,
     unlockAudio,
     activeAlertOrders,
+    isPushEnabled,
+    enablePushNotifications,
+    isRegisteringPush,
+    pushPermission,
+    canInstallPWA,
+    isStandalone,
+    promptInstallPWA,
   } = useOrderAlert();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -53,6 +61,33 @@ function StaffHeaderControls() {
             <span className="h-2 w-2 rounded-full bg-red-500 mr-1.5 animate-ping" />
             RINGING ({activeAlertOrders.length})
           </span>
+        )}
+
+        {/* PWA Install Button */}
+        {canInstallPWA && !isStandalone && (
+          <button
+            onClick={promptInstallPWA}
+            className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800 border border-brand-500/40 text-brand-400 hover:text-white transition text-xs font-semibold shadow-sm"
+            title="Install app to your home screen or desktop"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">Install App</span>
+          </button>
+        )}
+
+        {/* Enable Order Notifications header button */}
+        {!isPushEnabled && pushPermission !== "denied" && (
+          <button
+            onClick={enablePushNotifications}
+            disabled={isRegisteringPush}
+            className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-white text-xs font-bold transition shadow-sm"
+            title="Enable browser notifications"
+          >
+            <Bell className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">
+              {isRegisteringPush ? "Enabling..." : "Enable Order Notifications"}
+            </span>
+          </button>
         )}
 
         {/* Audio Mute/Unmute Toggle Button */}

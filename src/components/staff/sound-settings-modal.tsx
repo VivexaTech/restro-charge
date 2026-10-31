@@ -311,7 +311,7 @@ export function SoundSettingsModal({ isOpen, onClose }: SoundSettingsModalProps)
                 disabled={isRegisteringPush || pushPermission === "denied"}
                 className="bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold h-8"
               >
-                {isRegisteringPush ? "Registering..." : "Enable Browser Notifications"}
+                {isRegisteringPush ? "Registering..." : "Enable Order Notifications"}
               </Button>
             )}
           </div>

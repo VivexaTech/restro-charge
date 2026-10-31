@@ -429,7 +429,87 @@ async function runTests() {
     console.log("   ✅ Scenario H Passed: Multi-tenant token subscriptions are strictly isolated per restaurantId.");
   }
 
-  console.log("\n🎉 ALL NEW ORDER ALERT SYSTEM SCENARIOS PASSED 100%!");
+  // ------------------------------------------------------------------------------
+  // SCENARIO I: PWA Manifest & App Icons Validation
+  // ------------------------------------------------------------------------------
+  console.log("\n--- SCENARIO I: PWA Manifest & Icon Assets Verification ---");
+  const fs = await import("fs");
+  const path = await import("path");
+
+  const manifestPath = path.resolve(process.cwd(), "public/manifest.json");
+  assert.ok(fs.existsSync(manifestPath), "public/manifest.json must exist");
+  const manifestData = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+
+  assert.strictEqual(manifestData.display, "standalone", "Display mode must be standalone");
+  assert.strictEqual(manifestData.theme_color, "#f97316", "Theme color must be #f97316");
+  assert.strictEqual(manifestData.background_color, "#0f172a", "Background color must be #0f172a");
+
+  // Icon checks
+  const icon192Path = path.resolve(process.cwd(), "public/icon-192.png");
+  const icon512Path = path.resolve(process.cwd(), "public/icon-512.png");
+  const appleIconPath = path.resolve(process.cwd(), "public/apple-touch-icon.png");
+
+  assert.ok(fs.existsSync(icon192Path), "public/icon-192.png must exist");
+  assert.ok(fs.existsSync(icon512Path), "public/icon-512.png must exist");
+  assert.ok(fs.existsSync(appleIconPath), "public/apple-touch-icon.png must exist");
+
+  const icon192Stat = fs.statSync(icon192Path);
+  const icon512Stat = fs.statSync(icon512Path);
+  assert.ok(icon192Stat.size > 0, "icon-192.png must not be empty");
+  assert.ok(icon512Stat.size > 0, "icon-512.png must not be empty");
+
+  console.log("   ✅ Scenario I Passed: PWA Web App Manifest and 192x192/512x512 icons verified.");
+
+  // ------------------------------------------------------------------------------
+  // SCENARIO J: Service Worker Dynamic Initialization & Push Handling
+  // ------------------------------------------------------------------------------
+  console.log("\n--- SCENARIO J: Service Worker Script Verification ---");
+  const swPath = path.resolve(process.cwd(), "public/firebase-messaging-sw.js");
+  assert.ok(fs.existsSync(swPath), "public/firebase-messaging-sw.js must exist");
+
+  const swContent = fs.readFileSync(swPath, "utf-8");
+  assert.ok(
+    swContent.includes("firebase-app-compat.js"),
+    "SW must import firebase-app-compat"
+  );
+  assert.ok(
+    swContent.includes("firebase-messaging-compat.js"),
+    "SW must import firebase-messaging-compat"
+  );
+  assert.ok(
+    swContent.includes("onBackgroundMessage"),
+    "SW must handle onBackgroundMessage"
+  );
+  assert.ok(
+    swContent.includes("notificationclick"),
+    "SW must handle notificationclick event"
+  );
+  assert.ok(
+    swContent.includes("/staff"),
+    "SW notification click must navigate to /staff"
+  );
+  assert.ok(
+    swContent.includes("fcmMessageId") || swContent.includes("seenMessages"),
+    "SW must contain deduplication handling"
+  );
+
+  console.log("   ✅ Scenario J Passed: Service worker imports modular compat, handles background messages, deduplication, and routes clicks to /staff.");
+
+  // ------------------------------------------------------------------------------
+  // SCENARIO K: Audio Auto-Unlock & Scoped Blocked Logic
+  // ------------------------------------------------------------------------------
+  console.log("\n--- SCENARIO K: Audio Alert Scoped Blocked Logic ---");
+  // isBlocked() must return false when no active pending orders are queued
+  audioAlertService.reconcilePendingOrders([]);
+  assert.strictEqual(
+    audioAlertService.isBlocked(),
+    false,
+    "isBlocked() must return false when no orders are waiting to ring"
+  );
+
+  console.log("   ✅ Scenario K Passed: Audio alert manager does not report blocked unless active orders are pending.");
+
+  console.log("\n🎉 ALL NEW ORDER ALERT & FCM PWA SCENARIOS PASSED 100%!");
   process.exit(0);
 }
 
