@@ -418,11 +418,6 @@ export async function POST(req: NextRequest) {
     // 9. Save order & notify staff in real-time
     dataStore.saveOrder(order);
 
-    // 9b. Dispatch browser push notification to authorized restaurant staff
-    sendOrderPushNotification(order, restaurant).catch((pushErr) => {
-      console.warn("[Orders API] Push notification dispatch warning:", pushErr.message);
-    });
-
     // 10. Atomically append order to Dining Session and update combined bill
     const updatedSession = await diningSessionService.appendOrderToSession({
       restaurant,
@@ -430,6 +425,21 @@ export async function POST(req: NextRequest) {
       order,
       idempotencyKey,
     });
+
+    // 11. Dispatch browser push notification to authorized restaurant staff
+    // In serverless environments (Vercel), unawaited background promises are terminated as soon
+    // as the HTTP response is returned. We await push notification dispatch with a 2500ms timeout guard:
+    // this guarantees FCM network delivery while ensuring customer checkout is never blocked or failed.
+    try {
+      await Promise.race([
+        sendOrderPushNotification(order, restaurant),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Push notification dispatch timeout (2500ms)")), 2500)
+        ),
+      ]);
+    } catch (pushErr: any) {
+      console.warn("[Orders API] Push notification dispatch warning:", pushErr?.message || pushErr);
+    }
 
     return NextResponse.json(
       {

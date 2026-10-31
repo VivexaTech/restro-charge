@@ -1,22 +1,22 @@
 // ==============================================================================
 // RESTROCHARGE - Production Firebase Cloud Messaging Service Worker
 // Delivers background push notifications for newly placed restaurant orders.
-// Handles notification clicks, deduplication, and dynamic client parameterization.
+// Handles background wakeups, notification clicks, deduplication, and sound/vibration.
 // ==============================================================================
 
 importScripts("https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/10.14.0/firebase-messaging-compat.js");
 
-// Read configuration from service worker query parameters or default to active project credentials
+// Read configuration from service worker query parameters or default to production project credentials
 const params = new URLSearchParams(self.location.search);
 
 const firebaseConfig = {
-  apiKey: params.get("apiKey") || "mock-api-key",
+  apiKey: params.get("apiKey") || "AIzaSyBMwS7CicyMg5iYsdIIDhEpF2wRaKOwTMs",
   authDomain: params.get("authDomain") || "restro-charge.firebaseapp.com",
   projectId: params.get("projectId") || "restro-charge",
-  storageBucket: params.get("storageBucket") || "restro-charge.appspot.com",
-  messagingSenderId: params.get("messagingSenderId") || "123456789",
-  appId: params.get("appId") || "1:123456789:web:abcdef",
+  storageBucket: params.get("storageBucket") || "restro-charge.firebasestorage.app",
+  messagingSenderId: params.get("messagingSenderId") || "105115979205",
+  appId: params.get("appId") || "1:105115979205:web:90942d0103c6eb30bbcfac",
 };
 
 let messaging = null;
@@ -29,19 +29,33 @@ try {
   console.warn("[SW] Firebase compat init warning:", err);
 }
 
+// In-memory deduplication set to avoid showing duplicate notifications for the same push message
+const seenMessages = new Set();
+
 // Background FCM message handler
 if (messaging) {
   messaging.onBackgroundMessage(function (payload) {
     const data = payload.data || {};
     const notification = payload.notification || {};
 
+    const msgId = payload.fcmMessageId || data.orderId || "";
+    if (msgId) {
+      if (seenMessages.has(msgId)) return;
+      seenMessages.add(msgId);
+      if (seenMessages.size > 200) {
+        const first = seenMessages.values().next().value;
+        if (first) seenMessages.delete(first);
+      }
+    }
+
     const venue = data.venueName || data.restaurantName || "Restaurant";
     const orderNumber = data.orderNumber || (data.orderId ? `#${data.orderId.slice(-6)}` : "New Ticket");
     const tableLabel = data.tableLabel || "Table";
 
-    const title = notification.title || `New Order Received! — ${venue}`;
+    const title = notification.title || data.title || `New Order Received! — ${venue}`;
     const body =
       notification.body ||
+      data.body ||
       `Restaurant order ${orderNumber} has been placed. (${tableLabel})`;
 
     const options = {
@@ -51,6 +65,13 @@ if (messaging) {
       tag: data.orderId ? `order-${data.orderId}` : "new-order",
       renotify: true,
       requireInteraction: true,
+      vibrate: [200, 100, 200, 100, 200, 100, 400],
+      actions: [
+        {
+          action: "open_staff",
+          title: "View Ticket",
+        },
+      ],
       data: {
         url: data.url || "/staff",
         orderId: data.orderId,
@@ -62,7 +83,8 @@ if (messaging) {
   });
 }
 
-// Fallback push event handler (deduplicated via tag)
+// Push event handler: guarantees that even when the tab is closed or backgrounded,
+// every incoming push event displays a system notification without being dropped.
 self.addEventListener("push", function (event) {
   if (!event.data) return;
 
@@ -71,17 +93,25 @@ self.addEventListener("push", function (event) {
     const data = payload.data || {};
     const notification = payload.notification || {};
 
-    // If handled by FCM SDK (contains notification field that FCM natively shows in some browsers), avoid duplicating
-    if (messaging && payload.fcmMessageId && payload.notification) {
-      return;
+    const msgId = payload.fcmMessageId || data.orderId || "";
+    if (msgId) {
+      if (seenMessages.has(msgId)) return;
+      seenMessages.add(msgId);
+      if (seenMessages.size > 200) {
+        const first = seenMessages.values().next().value;
+        if (first) seenMessages.delete(first);
+      }
     }
 
     const venue = data.venueName || "Restaurant";
-    const orderNumber = data.orderNumber || "New Ticket";
-    const title = notification.title || `New Order Received! — ${venue}`;
+    const orderNumber = data.orderNumber || (data.orderId ? `#${data.orderId.slice(-6)}` : "New Ticket");
+    const tableLabel = data.tableLabel || "Table";
+
+    const title = notification.title || data.title || `New Order Received! — ${venue}`;
     const body =
       notification.body ||
-      (data.tableLabel ? `Restaurant order ${orderNumber} placed at ${data.tableLabel}.` : "A new table order has been placed.");
+      data.body ||
+      (tableLabel ? `Restaurant order ${orderNumber} placed at ${tableLabel}.` : "A new table order has been placed.");
 
     const options = {
       body,
@@ -90,6 +120,13 @@ self.addEventListener("push", function (event) {
       tag: data.orderId ? `order-${data.orderId}` : "new-order",
       renotify: true,
       requireInteraction: true,
+      vibrate: [200, 100, 200, 100, 200, 100, 400],
+      actions: [
+        {
+          action: "open_staff",
+          title: "View Ticket",
+        },
+      ],
       data: {
         url: data.url || "/staff",
         orderId: data.orderId,
@@ -103,8 +140,11 @@ self.addEventListener("push", function (event) {
     const text = event.data.text();
     event.waitUntil(
       self.registration.showNotification("🔔 New Order Received!", {
-        body: text,
+        body: text || "A new order has been received at your restaurant.",
         icon: "/icon-192.png",
+        badge: "/icon-192.png",
+        vibrate: [200, 100, 200, 100, 200, 100, 400],
+        requireInteraction: true,
         data: { url: "/staff" },
       })
     );
@@ -114,13 +154,21 @@ self.addEventListener("push", function (event) {
 // Notification click: focus existing staff window or open target order tab
 self.addEventListener("notificationclick", function (event) {
   event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) || "/staff";
+  const notifData = (event.notification && event.notification.data) || {};
+  const targetUrl = notifData.url || "/staff";
 
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (clientList) {
       for (let i = 0; i < clientList.length; i++) {
         const client = clientList[i];
-        if (client.url.includes("/staff") && "focus" in client) {
+        if (client.url && client.url.includes("/staff") && "focus" in client) {
+          if ("postMessage" in client && notifData.orderId) {
+            client.postMessage({
+              type: "NEW_ORDER_PUSH_CLICK",
+              orderId: notifData.orderId,
+              restaurantId: notifData.restaurantId,
+            });
+          }
           return client.focus();
         }
       }

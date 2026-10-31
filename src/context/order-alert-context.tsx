@@ -541,19 +541,25 @@ export function OrderAlertProvider({ children }: { children: React.ReactNode }) 
         }
       }
 
-      // Fallback: permission granted even if FCM token configuration is pending
-      setIsPushEnabled(true);
+      // If token retrieval or backend registration failed:
+      if (!token) {
+        console.warn("[Push Notifications] FCM token could not be obtained.");
+        toast.info("Browser notification permission granted! Background push token registration is pending.");
+      } else {
+        toast.error("Failed to register push token with server. Please try again.");
+      }
+      setIsPushEnabled(false);
       try {
-        localStorage.setItem("restrocharge_fcm_registered", "true");
+        localStorage.removeItem("restrocharge_fcm_registered");
       } catch {}
-      toast.success("Browser notifications enabled!");
       setIsRegisteringPush(false);
-      return true;
+      return false;
     } catch (err: any) {
       console.error("[Push Notifications] Registration error:", err);
       toast.error(
         "Failed to enable push notifications: " + (err.message || "Unknown error")
       );
+      setIsPushEnabled(false);
       setIsRegisteringPush(false);
       return false;
     }

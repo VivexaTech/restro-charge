@@ -88,7 +88,7 @@ export async function sendOrderPushNotification(
 
     const messaging = adminApp.messaging();
 
-    // 4. Send multicast push
+    // 4. Send multicast push with High Urgency & explicit background notification parameters
     const response = await messaging.sendEachForMulticast({
       tokens,
       notification: {
@@ -96,14 +96,20 @@ export async function sendOrderPushNotification(
         body,
       },
       data: {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        restaurantId: order.restaurantId,
-        tableLabel: order.tableLabel,
-        venueName,
+        orderId: String(order.id),
+        orderNumber: String(order.orderNumber),
+        restaurantId: String(order.restaurantId),
+        tableLabel: String(order.tableLabel),
+        venueName: String(venueName),
+        title: String(title),
+        body: String(body),
         url: clickUrl,
       },
       webpush: {
+        headers: {
+          Urgency: "high",
+          TTL: "86400",
+        },
         notification: {
           title,
           body,
@@ -112,6 +118,13 @@ export async function sendOrderPushNotification(
           tag: `order-${order.id}`,
           renotify: true,
           requireInteraction: true,
+          vibrate: [200, 100, 200, 100, 200, 100, 400],
+          actions: [
+            {
+              action: "open_staff",
+              title: "View Ticket",
+            },
+          ],
           data: {
             url: clickUrl,
             orderId: order.id,
